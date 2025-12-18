@@ -2,10 +2,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GameEvent, JobCategory, Language } from "../types";
 
-// Safe access to API key. 
-// We check if process is defined to prevent "ReferenceError: process is not defined" in some browser environments,
-// and fall back to empty string if the key is missing.
-const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) || '';
+// Access API key using Vite's standard import.meta.env
+// We use optional chaining (?.) to prevent crashes if env is undefined
+const apiKey = import.meta.env?.VITE_API_KEY || '';
 
 let ai: GoogleGenAI | null = null;
 try {
