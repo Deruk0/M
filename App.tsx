@@ -28,7 +28,11 @@ import {
   Settings,
   X,
   Globe,
-  ShieldAlert
+  ShieldAlert,
+  RotateCcw,
+  Medal,
+  Award,
+  HelpCircle
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 
@@ -52,6 +56,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [showCharts, setShowCharts] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [language, setLanguage] = useState<Language>('ru');
   
   // Trade Modal State
@@ -120,7 +125,7 @@ export default function App() {
     setShowCharts(false);
     const timer = setTimeout(() => setShowCharts(true), 150);
     return () => clearTimeout(timer);
-  }, [activeTab, marketSubTab]);
+  }, [activeTab, marketSubTab, state.isGameOver]);
 
   // --- HELPERS ---
   const t = (key: string): string => {
@@ -139,6 +144,18 @@ export default function App() {
     if (Math.abs(value) >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
     if (Math.abs(value) >= 1000) return `$${(value / 1000).toFixed(1)}k`;
     return `$${Math.round(value)}`;
+  };
+
+  // --- RANKING LOGIC ---
+  const getRank = (netWorth: number) => {
+      if (netWorth < 0) return { key: 'rank.bankrupt', color: 'text-red-500', icon: AlertTriangle };
+      if (netWorth < 50000) return { key: 'rank.survivor', color: 'text-gray-400', icon: Coffee };
+      if (netWorth < 200000) return { key: 'rank.worker', color: 'text-blue-400', icon: Briefcase };
+      if (netWorth < 500000) return { key: 'rank.manager', color: 'text-indigo-400', icon: Star };
+      if (netWorth < 1000000) return { key: 'rank.rich', color: 'text-emerald-400', icon: Medal };
+      if (netWorth < 5000000) return { key: 'rank.millionaire', color: 'text-yellow-400', icon: Trophy };
+      if (netWorth < 20000000) return { key: 'rank.tycoon', color: 'text-purple-400', icon: Award };
+      return { key: 'rank.legend', color: 'text-amber-300', icon: Globe };
   };
 
   // --- ADMIN LOGIC ---
@@ -447,10 +464,6 @@ export default function App() {
         history: [...prev.history, { month: nextMonthIdx, netWorth: newNetWorth }],
         isGameOver
       }));
-
-      if (isGameOver) {
-        addLog(t('header.game_over'), "warning");
-      }
 
     } catch (e) {
       console.error(e);
@@ -1063,7 +1076,7 @@ export default function App() {
                             width={35}
                             axisLine={false}
                             tickLine={false}
-                            tickFormatter={(value) => value >= 1000 ? `${(value/1000).toFixed(1)}k` : value.toFixed(0)}
+                            tickFormatter={(value: number) => value >= 1000 ? `${(value/1000).toFixed(1)}k` : value.toFixed(0)}
                           />
                           <Area type="monotone" dataKey="p" stroke={chartColor} strokeWidth={2} fill={`url(#grad${stock.symbol})`} animationDuration={300} />
                            {stock.averageCost > 0 && <ReferenceLine y={stock.averageCost} stroke="#fbbf24" strokeDasharray="3 3" opacity={0.5} />}
@@ -1216,6 +1229,103 @@ export default function App() {
     );
   };
 
+  const renderGameOver = () => {
+      const rank = getRank(state.netWorth);
+      const RankIcon = rank.icon;
+
+      return (
+        <div className="fixed inset-0 bg-gray-950 z-[60] flex items-center justify-center p-4 animate-in fade-in duration-500 overflow-y-auto">
+            <div className="w-full max-w-4xl bg-gray-900 border border-gray-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row max-h-[90vh]">
+                
+                {/* Left Side: Summary */}
+                <div className="w-full md:w-2/5 p-8 flex flex-col items-center justify-center text-center bg-gradient-to-br from-gray-900 to-gray-800 border-b md:border-b-0 md:border-r border-gray-800 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-500 via-purple-500 to-emerald-500"></div>
+                    
+                    <div className="mb-6">
+                        <div className={`w-24 h-24 rounded-full bg-gray-800 flex items-center justify-center border-4 ${rank.color.replace('text', 'border')} shadow-lg shadow-black/50 mb-4 mx-auto`}>
+                            <RankIcon size={48} className={rank.color} />
+                        </div>
+                        <h2 className="text-sm text-gray-500 uppercase tracking-widest font-bold mb-1">{t('rank.label')}</h2>
+                        <h1 className={`text-2xl font-bold ${rank.color}`}>{t(rank.key)}</h1>
+                    </div>
+
+                    <div className="space-y-1 mb-8">
+                        <div className="text-gray-400 text-sm uppercase font-semibold">{t('end.subtitle')}</div>
+                        <div className="text-4xl lg:text-5xl font-mono font-bold text-white tracking-tight">{formatMoney(state.netWorth)}</div>
+                    </div>
+
+                    <Button size="lg" onClick={() => window.location.reload()} className="w-full max-w-xs group relative overflow-hidden">
+                        <span className="relative z-10 flex items-center justify-center gap-2">
+                            <RotateCcw size={20} className="group-hover:rotate-180 transition-transform duration-500"/> 
+                            {t('end.restart')}
+                        </span>
+                        <div className="absolute inset-0 bg-emerald-400 opacity-0 group-hover:opacity-20 transition-opacity"></div>
+                    </Button>
+                </div>
+
+                {/* Right Side: Stats */}
+                <div className="w-full md:w-3/5 p-8 bg-gray-950 flex flex-col">
+                    <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                        <LineChart className="text-blue-500" /> {t('end.stats_title')}
+                    </h3>
+                    
+                    <div className="grid grid-cols-2 gap-4 mb-8">
+                        <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
+                            <div className="text-xs text-gray-500 uppercase mb-1">{t('edu.degrees')}</div>
+                            <div className="text-white font-semibold truncate flex items-center gap-2">
+                                <GraduationCap size={16} className="text-purple-400"/>
+                                {getEduTitle(state.education)}
+                            </div>
+                        </div>
+                        <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
+                            <div className="text-xs text-gray-500 uppercase mb-1">{t('jobs.your_job')}</div>
+                            <div className="text-white font-semibold truncate flex items-center gap-2">
+                                <Briefcase size={16} className="text-blue-400"/>
+                                {state.currentJob ? getJobTitle(state.currentJob) : t('jobs.unemployed')}
+                            </div>
+                        </div>
+                        <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
+                            <div className="text-xs text-gray-500 uppercase mb-1">{t('bank.score')}</div>
+                            <div className="text-white font-semibold flex items-center gap-2">
+                                <Gauge size={16} className={state.creditScore >= 700 ? 'text-emerald-400' : 'text-yellow-400'}/>
+                                {state.creditScore}
+                            </div>
+                        </div>
+                        <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
+                            <div className="text-xs text-gray-500 uppercase mb-1">{t('market.my_assets')}</div>
+                            <div className="text-white font-semibold flex items-center gap-2">
+                                <Landmark size={16} className="text-amber-400"/>
+                                {formatMoney(state.stocks.reduce((acc, s) => acc + (s.price * s.owned), 0) + state.deposit)}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 min-h-[200px] bg-gray-900/50 rounded-xl border border-gray-800 p-4 relative flex flex-col">
+                        <div className="text-xs text-gray-500 uppercase mb-4">{t('overview.history')}</div>
+                        <div className="flex-1 w-full relative">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={state.history} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+                                    <defs>
+                                        <linearGradient id="colorNetWorthEnd" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.5}/>
+                                            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                                    <XAxis dataKey="month" hide />
+                                    <YAxis stroke="#6b7280" tickFormatter={formatAxisNumber} fontSize={10} axisLine={false} tickLine={false} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '8px' }} formatter={(val: number) => [formatMoney(val), '']} labelFormatter={() => ''} />
+                                    <Area type="monotone" dataKey="netWorth" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#colorNetWorthEnd)" />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+      );
+  };
+
   return (
     <div className="flex flex-col md:flex-row h-screen bg-gray-950 text-gray-100 font-sans overflow-hidden">
       {/* Sidebar */}
@@ -1225,8 +1335,8 @@ export default function App() {
              <Trophy size={24} className="text-white" />
           </div>
           <div>
-              <h1 className="text-lg font-bold leading-none tracking-tight">Tycoon</h1>
-              <div className="text-xs text-gray-500 mt-1 font-mono">{MAX_YEARS} Years</div>
+              <h1 className="text-lg font-bold leading-none tracking-tight">ZeroMoney</h1>
+              <div className="text-xs text-gray-500 mt-1 font-mono">{MAX_YEARS} {t('overview.years')}</div>
           </div>
         </div>
         
@@ -1259,13 +1369,24 @@ export default function App() {
                 <div className="bg-emerald-500 h-full transition-all duration-300" style={{ width: `${(state.gameMonth / MAX_MONTHS) * 100}%` }}></div>
              </div>
              
-             <div className="grid grid-cols-2 gap-2 mt-2">
-                 <Button onClick={nextMonth} disabled={state.isGameOver || isLoading} className="w-full justify-center" variant={state.isGameOver ? 'ghost' : 'primary'}>
-                    {isLoading ? t('header.loading') : state.isGameOver ? t('header.game_over') : <><FastForward size={16}/> {t('header.next_month')}</>}
+             <div className="mt-4 space-y-3">
+                 <Button 
+                    onClick={nextMonth} 
+                    disabled={state.isGameOver || isLoading} 
+                    className="w-full justify-center py-4 text-lg font-bold shadow-emerald-500/20 shadow-lg" 
+                    variant={state.isGameOver ? 'ghost' : 'primary'}
+                 >
+                    {isLoading ? t('header.loading') : state.isGameOver ? t('header.game_over') : <><FastForward size={20}/> {t('header.next_month')}</>}
                  </Button>
-                 <Button onClick={() => setShowSettings(true)} variant="ghost" className="w-full justify-center">
-                    <Settings size={18} />
-                 </Button>
+                 
+                 <div className="grid grid-cols-2 gap-2">
+                     <Button onClick={() => setShowSettings(true)} variant="ghost" className="w-full justify-center bg-gray-800/50 hover:bg-gray-800">
+                        <Settings size={18} />
+                     </Button>
+                     <Button onClick={() => setShowHelp(true)} variant="ghost" className="w-full justify-center bg-gray-800/50 hover:bg-gray-800">
+                        <HelpCircle size={18} />
+                     </Button>
+                 </div>
              </div>
         </div>
       </aside>
@@ -1395,22 +1516,47 @@ export default function App() {
           </div>
       )}
 
-      {/* Game Over Overlay */}
-      {state.isGameOver && (
-          <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 animate-in fade-in duration-1000">
-              <div className="text-center space-y-6 max-w-lg">
-                  <Trophy size={80} className="mx-auto text-yellow-500 animate-bounce" />
-                  <h1 className="text-5xl font-bold text-white tracking-tight">{t('end.title')}</h1>
-                  <div>
-                      <div className="text-gray-400 text-lg">{t('end.subtitle')}</div>
-                      <div className="text-6xl font-mono font-bold text-emerald-400 mt-2">{formatMoney(state.netWorth)}</div>
-                  </div>
-                  <Button size="lg" onClick={() => window.location.reload()} className="w-full max-w-xs mx-auto animate-pulse">
-                      {t('settings.reset')}
-                  </Button>
-              </div>
-          </div>
+      {/* Help Modal */}
+      {showHelp && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+            <div className="bg-gray-900 rounded-xl w-full max-w-2xl border border-gray-700 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+                <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900 sticky top-0 z-10">
+                    <h3 className="font-bold flex items-center gap-2 text-xl"><HelpCircle size={24} className="text-blue-400"/> {t('help.title')}</h3>
+                    <button onClick={() => setShowHelp(false)} className="hover:text-white text-gray-400"><X size={24}/></button>
+                </div>
+                <div className="p-6 overflow-y-auto space-y-6">
+                    <div className="p-4 bg-emerald-900/10 border border-emerald-500/20 rounded-lg">
+                        <p className="text-emerald-400 font-bold text-center text-lg">{t('help.goal')}</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 className="text-blue-400 font-bold mb-2 flex items-center gap-2"><Briefcase size={16}/> {t('help.income_title')}</h4>
+                            <p className="text-sm text-gray-300 leading-relaxed">{t('help.income_text')}</p>
+                        </div>
+                        <div>
+                            <h4 className="text-purple-400 font-bold mb-2 flex items-center gap-2"><LineChart size={16}/> {t('help.market_title')}</h4>
+                            <p className="text-sm text-gray-300 leading-relaxed">{t('help.market_text')}</p>
+                        </div>
+                        <div>
+                            <h4 className="text-red-400 font-bold mb-2 flex items-center gap-2"><Landmark size={16}/> {t('help.bank_title')}</h4>
+                            <p className="text-sm text-gray-300 leading-relaxed">{t('help.bank_text')}</p>
+                        </div>
+                        <div>
+                            <h4 className="text-orange-400 font-bold mb-2 flex items-center gap-2"><Zap size={16}/> {t('help.intensity_title')}</h4>
+                            <p className="text-sm text-gray-300 leading-relaxed">{t('help.intensity_text')}</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="p-4 border-t border-gray-800 text-center">
+                     <Button onClick={() => setShowHelp(false)} className="w-full">OK</Button>
+                </div>
+            </div>
+        </div>
       )}
+
+      {/* Game Over Screen */}
+      {state.isGameOver && renderGameOver()}
     </div>
   );
 }

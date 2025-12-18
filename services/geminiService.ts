@@ -2,9 +2,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GameEvent, JobCategory, Language } from "../types";
 
-// Access API key using Vite's standard import.meta.env
+// Access API key from process.env as per guidelines
 // We use optional chaining (?.) to prevent crashes if env is undefined
-const apiKey = import.meta.env?.VITE_API_KEY || '';
+const apiKey = process.env.API_KEY || '';
 
 let ai: GoogleGenAI | null = null;
 try {

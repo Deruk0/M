@@ -142,12 +142,49 @@ export const TRANSLATIONS: Record<string, Record<Language, string>> = {
 
   // Game End
   'end.title': { ru: 'Финал игры', en: 'Game Over' },
-  'end.subtitle': { ru: 'Ваш итоговый капитал:', en: 'Final Net Worth:' },
+  'end.subtitle': { ru: 'Итоговый капитал', en: 'Final Net Worth' },
+  'end.stats_title': { ru: 'Статистика за 20 лет', en: '20-Year Statistics' },
+  'end.restart': { ru: 'Начать заново', en: 'Play Again' },
+  
+  // Ranks
+  'rank.label': { ru: 'Ваш ранг', en: 'Your Rank' },
+  'rank.bankrupt': { ru: 'Банкрот', en: 'Bankrupt' },
+  'rank.survivor': { ru: 'Выживший', en: 'Survivor' },
+  'rank.worker': { ru: 'Работяга', en: 'Hard Worker' },
+  'rank.manager': { ru: 'Успешный менеджер', en: 'Successful Manager' },
+  'rank.rich': { ru: 'Богач', en: 'Wealthy' },
+  'rank.millionaire': { ru: 'Миллионер', en: 'Millionaire' },
+  'rank.tycoon': { ru: 'Магнат', en: 'Tycoon' },
+  'rank.legend': { ru: 'Легенда Уолл-стрит', en: 'Wall St. Legend' },
 
   // Settings
   'settings.title': { ru: 'Настройки', en: 'Settings' },
   'settings.lang': { ru: 'Язык / Language', en: 'Language' },
   'settings.reset': { ru: 'Сбросить прогресс', en: 'Reset Progress' },
+  
+  // Help / Mechanics
+  'help.title': { ru: 'Правила игры', en: 'Game Rules' },
+  'help.goal': { ru: `Цель: Накопить максимальный капитал за ${MAX_YEARS} лет.`, en: `Goal: Maximize Net Worth in ${MAX_YEARS} years.` },
+  'help.income_title': { ru: 'Доходы и Работа', en: 'Income & Jobs' },
+  'help.income_text': { 
+    ru: 'Устраивайтесь на работу для зарплаты. Для высоких должностей требуется образование и опыт. Курсы повышают доход навсегда.', 
+    en: 'Get a job to earn salary. Senior roles require degrees and experience. Courses boost income permanently.' 
+  },
+  'help.market_title': { ru: 'Инвестиции', en: 'Investments' },
+  'help.market_text': { 
+    ru: 'Покупайте акции и крипту дешево, продавайте дорого. События могут обвалить или поднять рынок. Дивиденды платятся раз в квартал.', 
+    en: 'Buy stocks/crypto low, sell high. Events can crash or pump the market. Dividends are paid quarterly.' 
+  },
+  'help.bank_title': { ru: 'Банк и Кредиты', en: 'Bank & Credit' },
+  'help.bank_text': { 
+    ru: 'Вклад дает сложный процент. Кредиты полезны для старта, но следите за рейтингом. Просрочки убивают рейтинг.', 
+    en: 'Savings give compound interest. Loans are good for starting, but watch your credit score. Missed payments hurt bad.' 
+  },
+  'help.intensity_title': { ru: 'Режим работы', en: 'Work Mode' },
+  'help.intensity_text': { 
+    ru: '«На износ» дает больше денег и опыта, но есть риск выгорания (штраф). «Вполсилы» безопаснее, но меньше денег.', 
+    en: 'Hardcore mode yields more money/XP but risks burnout. Relaxed is safer but pays less.' 
+  },
   
   // Admin
   'admin.title': { ru: 'Панель администратора', en: 'Admin Panel' },
@@ -356,7 +393,6 @@ export const JOBS: Job[] = [
 
   // --- MEDICINE ---
   { id: 'med_ord', title: 'Санитар', titleEn: 'Orderly', category: 'medical', salary: 2500, reqEducation: EducationLevel.HIGH_SCHOOL, reqExpYears: 0 },
-  { id: 'med_res', title: 'Резидент', titleEn: 'Resident', category: 'medical', salary: 4000, reqEducation: EducationLevel.BACHELOR, reqExpYears: 0.5 },
   { id: 'med_nurse', title: 'Операционная м/с', titleEn: 'Surgical Nurse', category: 'medical', salary: 6000, reqEducation: EducationLevel.BACHELOR, reqExpYears: 1 },
   { id: 'med_anes', title: 'Анестезиолог', titleEn: 'Anesthesiologist', category: 'medical', salary: 12000, reqEducation: EducationLevel.MASTER, reqExpYears: 2 },
   { id: 'med_asst', title: 'Ассистент хирурга', titleEn: 'Surgical Assistant', category: 'medical', salary: 20000, reqEducation: EducationLevel.MASTER, reqExpYears: 3 },
