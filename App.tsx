@@ -1502,6 +1502,10 @@ export default function App() {
                             <h4 className="text-orange-400 font-bold mb-2 flex items-center gap-2"><Zap size={16}/> {helpers.t('help.intensity_title')}</h4>
                             <p className="text-sm text-gray-300 leading-relaxed">{helpers.t('help.intensity_text')}</p>
                         </div>
+                        <div className="md:col-span-2">
+                            <h4 className="text-yellow-400 font-bold mb-2 flex items-center gap-2"><Dices size={16}/> {helpers.t('help.casino_title')}</h4>
+                            <p className="text-sm text-gray-300 leading-relaxed">{helpers.t('help.casino_text')}</p>
+                        </div>
                     </div>
                 </div>
                 <div className="p-4 border-t border-gray-800 text-center">

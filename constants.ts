@@ -185,25 +185,35 @@ export const TRANSLATIONS: Record<string, Record<Language, string>> = {
   // Help / Mechanics
   'help.title': { ru: 'Правила игры', en: 'Game Rules' },
   'help.goal': { ru: `Цель: Накопить максимальный капитал за ${MAX_YEARS} лет.`, en: `Goal: Maximize Net Worth in ${MAX_YEARS} years.` },
-  'help.income_title': { ru: 'Доходы и Работа', en: 'Income & Jobs' },
+  
+  'help.income_title': { ru: 'Доходы и Карьера', en: 'Income & Career' },
   'help.income_text': { 
-    ru: 'Устраивайтесь на работу для зарплаты. Для высоких должностей требуется образование и опыт. Курсы повышают доход навсегда.', 
-    en: 'Get a job to earn salary. Senior roles require degrees and experience. Courses boost income permanently.' 
+    ru: 'Ваш основной источник денег. Начинайте с низов, копите опыт и получайте образование, чтобы занять руководящие посты с огромными зарплатами. Покупайте курсы — они дают постоянный бонус к доходу.', 
+    en: 'Your main source of cash. Start low, gain experience and degrees to reach executive roles with huge salaries. Buy courses for permanent income boosts.' 
   },
+  
   'help.market_title': { ru: 'Инвестиции', en: 'Investments' },
   'help.market_text': { 
-    ru: 'Покупайте акции и крипту дешево, продавайте дорого. События могут обвалить или поднять рынок. Дивиденды платятся раз в квартал.', 
-    en: 'Buy stocks/crypto low, sell high. Events can crash or pump the market. Dividends are paid quarterly.' 
+    ru: 'Фондовый рынок (Акции) стабилен и платит дивиденды каждые 3 месяца. Криптовалюта очень волатильна: можно удесятерить капитал или потерять всё. Следите за новостями и индикаторами тренда.', 
+    en: 'Stocks are stable and pay quarterly dividends. Crypto is highly volatile: you can 10x your money or lose it all. Watch news events and trend indicators.' 
   },
-  'help.bank_title': { ru: 'Банк и Кредиты', en: 'Bank & Credit' },
+  
+  'help.bank_title': { ru: 'Банк и Финансы', en: 'Bank & Finance' },
   'help.bank_text': { 
-    ru: 'Вклад дает сложный процент. Кредиты полезны для старта, но следите за рейтингом. Просрочки убивают рейтинг.', 
-    en: 'Savings give compound interest. Loans are good for starting, but watch your credit score. Missed payments hurt bad.' 
+    ru: 'Вклад — безопасное хранение денег под сложный процент. Кредит дает быстрые деньги, но проценты могут съесть доход. Просрочка платежа уничтожит ваш кредитный рейтинг.', 
+    en: 'Savings give compound interest - safe and steady. Loans provide quick cash, but interest rates eat income. Missing payments destroys your credit score.' 
   },
+  
   'help.intensity_title': { ru: 'Режим работы', en: 'Work Mode' },
   'help.intensity_text': { 
-    ru: '«На износ» дает больше денег и опыта, но есть риск выгорания (штраф). «Вполсилы» безопаснее, но меньше денег.', 
-    en: 'Hardcore mode yields more money/XP but risks burnout. Relaxed is safer but pays less.' 
+    ru: '«На износ» увеличивает доход и опыт на 20%, но есть риск выгорания (штраф). «Вполсилы» снижает доход, но безопасен. «Норма» — баланс.', 
+    en: 'Hardcore boosts income/XP by 20% but risks burnout. Relaxed lowers income but is safe. Normal is balanced.' 
+  },
+
+  'help.casino_title': { ru: 'Азартные игры', en: 'Gambling' },
+  'help.casino_text': { 
+    ru: 'Казино — место высокого риска. Слоты: чистая удача. Скачки: чем выше коэффициент, тем меньше шанс, но больше выигрыш. Блекджек: обыграйте дилера, набрав больше очков, но не больше 21.', 
+    en: 'High risk zone. Slots: pure luck. Horse Racing: higher odds mean lower win chance but bigger payout. Blackjack: beat the dealer without going over 21.' 
   },
   
   // Admin
