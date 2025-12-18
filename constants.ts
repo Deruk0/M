@@ -46,6 +46,7 @@ export const TRANSLATIONS: Record<string, Record<Language, string>> = {
   'nav.jobs': { ru: 'Карьера', en: 'Career' },
   'nav.market': { ru: 'Рынки', en: 'Markets' },
   'nav.bank': { ru: 'Банк', en: 'Bank' },
+  'nav.casino': { ru: 'Казино', en: 'Casino' },
   'nav.time': { ru: 'Время', en: 'Time' },
   'nav.year': { ru: 'Г.', en: 'Y' },
   'nav.month': { ru: 'М.', en: 'M' },
@@ -140,10 +141,29 @@ export const TRANSLATIONS: Record<string, Record<Language, string>> = {
     en: 'Keep your score above 750 for best rates. Compound interest is your friend.' 
   },
 
+  // Casino
+  'casino.title': { ru: 'Казино Рояль', en: 'Casino Royale' },
+  'casino.slots': { ru: 'Слоты', en: 'Slots' },
+  'casino.horses': { ru: 'Скачки', en: 'Horse Racing' },
+  'casino.blackjack': { ru: 'Блекджек', en: 'Blackjack' },
+  'casino.bet': { ru: 'Ставка', en: 'Bet' },
+  'casino.spin': { ru: 'Крутить', en: 'Spin' },
+  'casino.win': { ru: 'Выигрыш!', en: 'You Win!' },
+  'casino.lose': { ru: 'Проигрыш', en: 'You Lose' },
+  'casino.draw': { ru: 'Ничья', en: 'Push' },
+  'casino.place_bet': { ru: 'Сделать ставку', en: 'Place Bet' },
+  'casino.start_race': { ru: 'Старт', en: 'Start Race' },
+  'casino.horse_select': { ru: 'Выберите лошадь', en: 'Select Horse' },
+  'casino.bj_deal': { ru: 'Раздать', en: 'Deal' },
+  'casino.bj_hit': { ru: 'Еще', en: 'Hit' },
+  'casino.bj_stand': { ru: 'Хватит', en: 'Stand' },
+  'casino.error_funds': { ru: 'Недостаточно средств', en: 'Insufficient Funds' },
+  'casino.payout': { ru: 'Выплата', en: 'Payout' },
+
   // Game End
   'end.title': { ru: 'Финал игры', en: 'Game Over' },
   'end.subtitle': { ru: 'Итоговый капитал', en: 'Final Net Worth' },
-  'end.stats_title': { ru: 'Статистика за 20 лет', en: '20-Year Statistics' },
+  'end.stats_title': { ru: 'Статистика за 10 лет', en: '10-Year Statistics' },
   'end.restart': { ru: 'Начать заново', en: 'Play Again' },
   
   // Ranks
