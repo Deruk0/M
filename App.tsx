@@ -1,0 +1,1493 @@
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { 
+  Briefcase, 
+  TrendingUp, 
+  Landmark, 
+  GraduationCap, 
+  FastForward, 
+  DollarSign,
+  Trophy,
+  Hourglass,
+  BookOpen,
+  CheckCircle2,
+  Lock,
+  Star,
+  Zap,
+  Coffee,
+  BrainCircuit,
+  ArrowUpRight,
+  ArrowDownRight,
+  Percent,
+  Coins,
+  LineChart,
+  AlertTriangle,
+  PiggyBank,
+  CreditCard,
+  Gauge,
+  Settings,
+  X,
+  Globe,
+  ShieldAlert
+} from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+
+import { PlayerState, Stock, Job, EducationLevel, LogMessage, Course, JobCategory, Language } from './types';
+import { INITIAL_STOCKS, JOBS, MAX_MONTHS, STARTING_AGE_MONTHS, EDUCATION_COSTS, MAX_YEARS, COURSES, EDUCATION_DURATIONS, CATEGORY_NAMES, TRANSLATIONS, EDUCATION_TITLES } from './constants';
+import { generateGameEvent } from './services/geminiService';
+import { Button } from './components/Button';
+import { Card } from './components/Card';
+
+// Helper formatters
+const formatMoney = (val: number) => `$${val.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}`;
+const formatMoneyDecimal = (val: number) => `$${val.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const formatPercent = (val: number) => `${(val * 100).toFixed(2)}%`;
+const getYearNum = (month: number) => Math.floor(month / 12) + 1;
+const getMonthNum = (month: number) => (month % 12) + 1;
+
+export default function App() {
+  // --- STATE ---
+  const [activeTab, setActiveTab] = useState<'overview' | 'education' | 'jobs' | 'market' | 'bank'>('overview');
+  const [marketSubTab, setMarketSubTab] = useState<'stock' | 'crypto'>('stock');
+  const [isLoading, setIsLoading] = useState(false);
+  const [showCharts, setShowCharts] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [language, setLanguage] = useState<Language>('ru');
+  
+  // Trade Modal State
+  const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
+  const [tradeAmount, setTradeAmount] = useState('');
+  const [tradeMode, setTradeMode] = useState<'buy' | 'sell'>('buy');
+
+  // Admin State
+  const [adminPin, setAdminPin] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  
+  const [state, setState] = useState<PlayerState>({
+    age: STARTING_AGE_MONTHS,
+    gameMonth: 0,
+    cash: 5000,
+    
+    // Banking Defaults
+    debt: 0,
+    creditScore: 650, // Average start
+    creditLimit: 10000,
+    loanRate: 0.15, // 15%
+    deposit: 0,
+    depositRate: 0.04, // 4%
+
+    netWorth: 5000,
+    education: EducationLevel.NONE, // Changed to NONE to make High School buyable
+    courses: [],
+    activeCourse: null,
+    experience: {
+      service: 0,
+      business: 0,
+      tech: 0,
+      medical: 0
+    },
+    currentJob: null,
+    workIntensity: 'normal',
+    stocks: JSON.parse(JSON.stringify(INITIAL_STOCKS)), 
+    history: [{ month: 0, netWorth: 5000 }],
+    isGameOver: false,
+    messages: []
+  });
+
+  // Init welcome message based on lang
+  useEffect(() => {
+    if (state.gameMonth === 0 && state.messages.length === 0) {
+       const welcomeText = language === 'ru' 
+         ? `Добро пожаловать! Ваша цель: заработать максимум за ${MAX_YEARS} лет.`
+         : `Welcome! Your goal is to maximize wealth in ${MAX_YEARS} years.`;
+       
+       addLog(welcomeText, 'info');
+    }
+  }, []); // Run once on mount
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Delay chart rendering
+  useEffect(() => {
+    setShowCharts(false);
+    const timer = setTimeout(() => setShowCharts(true), 150);
+    return () => clearTimeout(timer);
+  }, [activeTab, marketSubTab]);
+
+  // --- HELPERS ---
+  const t = (key: string): string => {
+    return TRANSLATIONS[key]?.[language] || key;
+  };
+
+  const getJobTitle = (job: Job) => language === 'ru' ? job.title : job.titleEn;
+  const getCourseTitle = (c: Course) => language === 'ru' ? c.title : c.titleEn;
+  const getCourseDesc = (c: Course) => language === 'ru' ? c.description : c.descriptionEn;
+  const getStockName = (s: Stock) => language === 'ru' ? s.name : s.nameEn;
+  const getEduTitle = (lvl: EducationLevel) => EDUCATION_TITLES[language][lvl];
+  const getCatName = (cat: JobCategory) => CATEGORY_NAMES[language][cat];
+
+  // Helper for adaptive axis
+  const formatAxisNumber = (value: number) => {
+    if (Math.abs(value) >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+    if (Math.abs(value) >= 1000) return `$${(value / 1000).toFixed(1)}k`;
+    return `$${Math.round(value)}`;
+  };
+
+  // --- ADMIN LOGIC ---
+  const unlockAdmin = () => {
+    if (adminPin === '2406') {
+      setIsAdmin(true);
+      addLog(t('admin.access_granted'), 'success');
+      setAdminPin('');
+    } else {
+      addLog(t('admin.wrong_pin'), 'danger');
+      setAdminPin('');
+    }
+  };
+
+  const adminAddCash = (amount: number) => {
+    setState(prev => ({ ...prev, cash: prev.cash + amount }));
+    addLog(`${t('admin.cheat_activated')}: +${formatMoney(amount)}`, 'success');
+  };
+
+  const adminSetScore = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseInt(e.target.value);
+    if (!isNaN(val)) {
+       setState(prev => ({ ...prev, creditScore: Math.min(850, Math.max(300, val)) }));
+    }
+  };
+
+  const adminSetEdu = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const lvl = e.target.value as EducationLevel;
+    setState(prev => ({ 
+        ...prev, 
+        education: lvl,
+        activeCourse: null // Clear any active study if force upgrading
+    }));
+    addLog(`${t('admin.cheat_activated')}: Education -> ${lvl}`, 'success');
+  };
+
+  const adminSetJob = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const jobId = e.target.value;
+    const job = JOBS.find(j => j.id === jobId);
+    if (job) {
+        setState(prev => ({ ...prev, currentJob: job }));
+        addLog(`${t('admin.cheat_activated')}: Job -> ${getJobTitle(job)}`, 'success');
+    }
+  };
+
+
+  // --- GAME LOGIC ---
+
+  const addLog = (text: string, type: LogMessage['type'] = 'info') => {
+    setState(prev => ({
+      ...prev,
+      messages: [{
+        id: Math.random().toString(36),
+        text,
+        type,
+        date: `${t('nav.year')}${getYearNum(prev.gameMonth)} ${t('nav.month')}${getMonthNum(prev.gameMonth)}`
+      }, ...prev.messages].slice(0, 50) 
+    }));
+  };
+
+  const calculateNetWorth = useCallback((cash: number, debt: number, deposit: number, stocks: Stock[]) => {
+    const stockValue = stocks.reduce((acc, s) => acc + (s.price * s.owned), 0);
+    return cash + deposit - debt + stockValue;
+  }, []);
+
+  const calculateTotalSalary = (job: Job | null, ownedCourseIds: string[], intensity: PlayerState['workIntensity']) => {
+    if (!job) return 0;
+    let multiplier = 1;
+    
+    ownedCourseIds.forEach(id => {
+      const course = COURSES.find(c => c.id === id);
+      if (course) multiplier += course.salaryMultiplier;
+    });
+
+    if (intensity === 'relaxed') multiplier -= 0.2;
+    if (intensity === 'hard') multiplier += 0.2;
+
+    return Math.floor(job.salary * multiplier);
+  };
+
+  const calculateCreditLimit = (salary: number, score: number, netWorth: number) => {
+    const scoreMultiplier = Math.max(0.1, (score - 200) / 400); 
+    const base = Math.max(5000, (salary * 6) + (Math.max(0, netWorth) * 0.1));
+    return Math.floor(base * scoreMultiplier);
+  };
+
+  const nextMonth = async () => {
+    if (state.isGameOver || isLoading) return;
+    setIsLoading(true);
+
+    try {
+      const salary = calculateTotalSalary(state.currentJob, state.courses, state.workIntensity);
+      const expenses = 800 + (salary * 0.2); 
+      
+      const rateChange = (Math.random() - 0.5) * 0.005;
+      let newDepositRate = Math.max(0.01, Math.min(0.12, state.depositRate + rateChange));
+      
+      const riskPremium = 0.02 + ((850 - state.creditScore) / 550) * 0.18;
+      let newLoanRate = newDepositRate + riskPremium;
+
+      const depositInterest = state.deposit * (state.depositRate / 12);
+      const loanInterest = state.debt * (state.loanRate / 12);
+      
+      let newCash = state.cash + salary - expenses;
+      let newDeposit = state.deposit + depositInterest;
+      let newDebt = state.debt + loanInterest;
+
+      if (newCash >= loanInterest) {
+          newCash -= loanInterest;
+          newDebt -= loanInterest; 
+      } else {
+          addLog(language === 'ru' ? "Пропущена оплата процентов по кредиту! Рейтинг падает." : "Loan interest payment missed! Credit score dropping.", "danger");
+      }
+
+      if (newCash < 0) {
+         const shortfall = Math.abs(newCash);
+         newDebt += shortfall;
+         newCash = 0;
+         addLog(`${language === 'ru' ? 'Автоматический овердрафт' : 'Automatic overdraft'}: ${formatMoney(shortfall)}`, "warning");
+      }
+
+      let newScore = state.creditScore;
+      const utilization = newDebt / Math.max(1, state.creditLimit);
+      
+      if (utilization > 1.1) newScore -= 10;
+      else if (utilization > 0.8) newScore -= 5;
+      else if (utilization > 0.3) newScore -= 1;
+      else if (newDebt > 0) newScore += 1;
+      else newScore += 0.5;
+      
+      if (Math.random() < 0.1) newScore += (Math.random() - 0.5) * 4;
+      newScore = Math.max(300, Math.min(850, Math.floor(newScore)));
+      
+      const newLimit = calculateCreditLimit(salary, newScore, state.netWorth);
+
+      const currentMonthNum = getMonthNum(state.gameMonth);
+      let totalDividends = 0;
+      if (currentMonthNum % 3 === 0) {
+        state.stocks.forEach(s => {
+          if (s.owned > 0 && s.dividendYield > 0) {
+            const divPayout = (s.price * s.dividendYield / 4) * s.owned;
+            totalDividends += divPayout;
+          }
+        });
+      }
+
+      if (totalDividends > 0) {
+        newCash += totalDividends;
+        addLog(`${language === 'ru' ? 'Получены дивиденды' : 'Dividends received'}: ${formatMoney(totalDividends)}`, "success");
+      }
+
+      let activeCourse = state.activeCourse ? { ...state.activeCourse } : null;
+      let newCourses = [...state.courses];
+      let newEducation = state.education;
+      
+      if (activeCourse) {
+        activeCourse.monthsLeft -= 1;
+        if (activeCourse.monthsLeft <= 0) {
+          if (activeCourse.type === 'course') {
+             const course = COURSES.find(c => c.id === activeCourse?.id);
+             if (course) {
+               newCourses.push(course.id);
+               addLog(`${language === 'ru' ? 'Курс завершен' : 'Course completed'}: ${getCourseTitle(course)}!`, "success");
+             }
+          } else {
+             newEducation = activeCourse.id as EducationLevel;
+             addLog(`${language === 'ru' ? 'Получено образование' : 'Degree obtained'}: ${getEduTitle(newEducation)}!`, "success");
+          }
+          activeCourse = null;
+        }
+      }
+
+      const newStocks = state.stocks.map(stock => {
+        let newPrice = stock.price;
+
+        if (stock.type === 'crypto') {
+            if (stock.symbol === 'ZETA') {
+                // Type 1: Mean Reversion / Stable-ish
+                const targetPrice = 10; // Anchored to 10
+                const pullToCenter = (targetPrice - stock.price) * 0.15; // Pull back force
+                const noise = (Math.random() - 0.5) * stock.volatility * stock.price;
+                newPrice = stock.price + pullToCenter + noise;
+            } 
+            else if (stock.symbol === 'MOON') {
+                // Type 3: Volatile / Pump & Dump
+                const randomVal = Math.random();
+                if (randomVal < 0.12) { // 12% chance of huge move
+                    // 50/50 pump or dump
+                    const multiplier = Math.random() > 0.5 ? (Math.random() * 2 + 1.2) : (Math.random() * 0.5 + 0.1);
+                    newPrice = stock.price * multiplier;
+                } else {
+                    // High normal volatility
+                    newPrice = stock.price * (1 + (Math.random() - 0.5) * stock.volatility);
+                }
+                // Fix: ensure min price is 1.0
+                newPrice = Math.max(1.0, newPrice);
+            } 
+            else {
+                // Type 2: Classic (BTC/LITE)
+                // Standard random walk with trend
+                const change = (Math.random() - 0.5 + stock.trend) * stock.volatility;
+                newPrice = stock.price * (1 + change);
+            }
+        } else {
+            // Standard Stocks
+            const currentVolatility = stock.volatility * (0.5 + Math.random()); 
+            const change = (Math.random() - 0.5 + stock.trend) * currentVolatility;
+            newPrice = stock.price * (1 + change);
+        }
+        
+        newPrice = Math.max(0.01, parseFloat(newPrice.toFixed(2))); 
+        
+        return {
+          ...stock,
+          price: newPrice,
+          history: [...stock.history, newPrice]
+        };
+      });
+
+      const newNetWorth = calculateNetWorth(newCash, newDebt, newDeposit, newStocks);
+
+      let eventChance = 0.1;
+      if (state.workIntensity === 'hard') eventChance = 0.2;
+
+      let eventImpact = 0;
+      if (Math.random() < eventChance) {
+        if (state.workIntensity === 'hard' && Math.random() < 0.3) {
+            eventImpact = -2000;
+            const burnOutMsg = language === 'ru' ? "ВЫГОРАНИЕ! Лечение стоит денег." : "BURNOUT! Medical bills applied.";
+            addLog(burnOutMsg, "danger");
+            setState(prev => ({...prev, workIntensity: 'normal'}));
+        } else {
+            const courseNames = newCourses.map(id => {
+                const c = COURSES.find(co => co.id === id);
+                return c ? getCourseTitle(c) : id;
+            });
+            const evt = await generateGameEvent(
+              getYearNum(state.gameMonth), 
+              state.currentJob ? { title: getJobTitle(state.currentJob), category: state.currentJob.category } : null, 
+              newNetWorth,
+              getEduTitle(newEducation),
+              courseNames,
+              language
+            );
+            
+            if (evt) {
+              eventImpact = evt.cashImpact;
+              const evtPrefix = language === 'ru' ? 'СОБЫТИЕ' : 'EVENT';
+              addLog(`${evtPrefix}: ${evt.description} (${formatMoney(evt.cashImpact)})`, evt.cashImpact >= 0 ? 'success' : 'danger');
+              
+              if (evt.marketImpact === 'bull') {
+                newStocks.forEach(s => {
+                    if (s.type === 'stock') s.price *= (1 + Math.random() * 0.15);
+                });
+                const bullMsg = language === 'ru' ? "Рынок акций растет на новостях!" : "Bull market triggered by news!";
+                addLog(bullMsg, "success");
+              } else if (evt.marketImpact === 'bear') {
+                 newStocks.forEach(s => {
+                    if (s.type === 'stock') s.price *= (1 - Math.random() * 0.10);
+                });
+                const bearMsg = language === 'ru' ? "Рынок акций падает на новостях!" : "Bear market triggered by news!";
+                addLog(bearMsg, "danger");
+              }
+            }
+        }
+      }
+
+      newCash += eventImpact;
+
+      const nextMonthIdx = state.gameMonth + 1;
+      const isGameOver = nextMonthIdx >= MAX_MONTHS;
+      
+      let newExperience = { ...state.experience };
+      if (state.currentJob) {
+        const cat = state.currentJob.category;
+        let growth = 1/12;
+        if (state.workIntensity === 'hard') growth = 1.5/12;
+        if (state.workIntensity === 'relaxed') growth = 0.5/12;
+
+        newExperience[cat] = (newExperience[cat] || 0) + growth;
+        
+        if (Math.floor(newExperience[cat]) > Math.floor(state.experience[cat])) {
+             const expMsg = language === 'ru' 
+                ? `Стаж в "${getCatName(cat)}" увеличен до ${Math.floor(newExperience[cat])} лет.`
+                : `Experience in "${getCatName(cat)}" increased to ${Math.floor(newExperience[cat])} years.`;
+             addLog(expMsg, "info");
+        }
+      }
+
+      setState(prev => ({
+        ...prev,
+        gameMonth: nextMonthIdx,
+        cash: newCash,
+        debt: newDebt,
+        deposit: newDeposit,
+        depositRate: newDepositRate,
+        loanRate: newLoanRate,
+        creditScore: newScore,
+        creditLimit: newLimit,
+        stocks: newStocks,
+        courses: newCourses,
+        education: newEducation,
+        activeCourse,
+        experience: newExperience,
+        netWorth: newNetWorth,
+        history: [...prev.history, { month: nextMonthIdx, netWorth: newNetWorth }],
+        isGameOver
+      }));
+
+      if (isGameOver) {
+        addLog(t('header.game_over'), "warning");
+      }
+
+    } catch (e) {
+      console.error(e);
+      addLog("Error simulating month", "danger");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- ACTIONS ---
+
+  const buyStock = (symbol: string, amount: number) => {
+    if (amount <= 0) return;
+    const stock = state.stocks.find(s => s.symbol === symbol);
+    if (!stock) return;
+    
+    const cost = stock.price * amount;
+    if (state.cash >= cost) {
+      setState(prev => {
+        const newStocks = prev.stocks.map(s => {
+          if (s.symbol === symbol) {
+            const oldTotalCost = s.owned * s.averageCost;
+            const newTotalOwned = s.owned + amount;
+            const newAverageCost = (oldTotalCost + cost) / newTotalOwned;
+
+            return { 
+              ...s, 
+              owned: newTotalOwned,
+              averageCost: newAverageCost
+            };
+          }
+          return s;
+        });
+
+        return {
+          ...prev,
+          cash: prev.cash - cost,
+          stocks: newStocks
+        };
+      });
+      addLog(`+${amount.toFixed(4)} ${getStockName(stock)}`, "success");
+    } else {
+      addLog("$$$ < 0", "danger");
+    }
+  };
+
+  const sellStock = (symbol: string, amount: number) => {
+    if (amount <= 0) return;
+    const stock = state.stocks.find(s => s.symbol === symbol);
+    if (!stock) return;
+
+    // Allow small epsilon for float comparison errors
+    if (stock.owned >= amount - 0.0001) {
+      const gain = stock.price * amount;
+      const profit = (stock.price - stock.averageCost) * amount;
+
+      setState(prev => ({
+        ...prev,
+        cash: prev.cash + gain,
+        stocks: prev.stocks.map(s => s.symbol === symbol ? { ...s, owned: Math.max(0, s.owned - amount) } : s)
+      }));
+      
+      const type = profit >= 0 ? "success" : "warning";
+      addLog(`-${amount.toFixed(4)} ${getStockName(stock)}. P/L: ${formatMoney(profit)}`, type);
+    }
+  };
+
+  const handleOpenTrade = (stock: Stock) => {
+    setSelectedStock(stock);
+    setTradeMode('buy');
+    setTradeAmount('');
+  };
+
+  const handleExecuteTrade = () => {
+    if (!selectedStock) return;
+    const value = parseFloat(tradeAmount);
+    if (isNaN(value) || value <= 0) return;
+
+    const quantity = value / selectedStock.price;
+
+    if (tradeMode === 'buy') {
+        if (state.cash >= value) {
+            buyStock(selectedStock.symbol, quantity);
+            setSelectedStock(null);
+        }
+    } else {
+        const ownedValue = selectedStock.owned * selectedStock.price;
+        if (value <= ownedValue + 0.01) {
+            sellStock(selectedStock.symbol, quantity);
+            setSelectedStock(null);
+        }
+    }
+  };
+
+  const handleMaxTrade = () => {
+    if (!selectedStock) return;
+    if (tradeMode === 'buy') {
+        setTradeAmount(Math.floor(state.cash).toString());
+    } else {
+        setTradeAmount((selectedStock.owned * selectedStock.price).toFixed(2));
+    }
+  };
+
+  const applyForJob = (job: Job) => {
+    const levels = [EducationLevel.NONE, EducationLevel.HIGH_SCHOOL, EducationLevel.BACHELOR, EducationLevel.MASTER, EducationLevel.MBA];
+    const playerLevelIdx = levels.indexOf(state.education);
+    const reqLevelIdx = levels.indexOf(job.reqEducation);
+
+    if (playerLevelIdx < reqLevelIdx) {
+       addLog(`${t('jobs.req_edu')}: ${getEduTitle(job.reqEducation)}`, "danger");
+       return;
+    }
+
+    const playerExpInCat = state.experience[job.category] || 0;
+    if (playerExpInCat < job.reqExpYears) {
+      addLog(`${t('jobs.req_exp')}: ${job.reqExpYears} ${t('overview.years')}`, "danger");
+      return;
+    }
+
+    setState(prev => ({ ...prev, currentJob: job, workIntensity: 'normal' }));
+    addLog(`OK: ${getJobTitle(job)}`, "success");
+  };
+
+  const quitJob = () => {
+    if (state.currentJob) {
+      setState(prev => ({ ...prev, currentJob: null, workIntensity: 'normal' }));
+    }
+  };
+
+  const setWorkIntensity = (intensity: PlayerState['workIntensity']) => {
+    setState(prev => ({ ...prev, workIntensity: intensity }));
+  };
+
+  const startEducation = (level: EducationLevel) => {
+    if (state.activeCourse) return;
+    const cost = EDUCATION_COSTS[level];
+    if (state.cash >= cost) {
+      setState(prev => ({
+        ...prev,
+        cash: prev.cash - cost,
+        activeCourse: { id: level, monthsLeft: EDUCATION_DURATIONS[level], type: 'edu' }
+      }));
+    }
+  };
+
+  const buyCourse = (course: Course) => {
+    if (state.activeCourse) return;
+    if (state.cash >= course.cost) {
+      setState(prev => ({
+        ...prev,
+        cash: prev.cash - course.cost,
+        activeCourse: { id: course.id, monthsLeft: course.durationMonths, type: 'course' }
+      }));
+    }
+  };
+
+  const repayDebt = (amount: number) => {
+    if (state.cash >= amount && state.debt > 0) {
+      setState(prev => ({
+        ...prev,
+        cash: prev.cash - amount,
+        debt: Math.max(0, prev.debt - amount)
+      }));
+    }
+  };
+
+  const takeLoan = (amount: number) => {
+    const maxLoan = state.creditLimit - state.debt;
+    if (amount > maxLoan) return;
+    setState(prev => ({
+      ...prev,
+      cash: prev.cash + amount,
+      debt: prev.debt + amount
+    }));
+  };
+
+  const depositCash = (amount: number) => {
+      if (amount <= 0) return;
+      if (state.cash >= amount) {
+          setState(prev => ({
+              ...prev,
+              cash: prev.cash - amount,
+              deposit: prev.deposit + amount
+          }));
+      }
+  };
+
+  const withdrawDeposit = (amount: number) => {
+      if (amount <= 0) return;
+      if (state.deposit >= amount) {
+          setState(prev => ({
+              ...prev,
+              cash: prev.cash - amount,
+              deposit: prev.deposit - amount
+          }));
+      }
+  };
+
+  // --- UI COMPONENTS ---
+
+  const renderOverview = () => (
+    <div className="space-y-6" key="overview-tab">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card title={t('header.cash')} className="border-l-4 border-l-emerald-500">
+          <div className="text-2xl font-bold text-white">{formatMoney(state.cash)}</div>
+        </Card>
+        <Card title={t('overview.net_worth')} className="border-l-4 border-l-purple-500">
+           <div className="text-2xl font-bold text-white">{formatMoney(state.netWorth)}</div>
+        </Card>
+        <Card title={t('overview.income')} className="border-l-4 border-l-blue-500">
+          <div className="text-2xl font-bold text-white">
+            {formatMoney(calculateTotalSalary(state.currentJob, state.courses, state.workIntensity))} 
+            <span className="text-sm text-gray-400">{t('overview.per_month')}</span>
+          </div>
+          {state.currentJob && state.workIntensity !== 'normal' && (
+             <div className={`text-xs mt-1 ${state.workIntensity === 'hard' ? 'text-emerald-400' : 'text-yellow-400'}`}>
+               {state.workIntensity === 'hard' ? t('overview.intensity.hard') : t('overview.intensity.relaxed')}
+             </div>
+          )}
+        </Card>
+        <Card title={t('overview.debt')} className="border-l-4 border-l-red-500">
+          <div className="text-2xl font-bold text-red-400">{formatMoney(state.debt)}</div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 min-w-0">
+            <Card title={t('overview.history')}>
+                <div className="h-64 w-full min-w-0 bg-gray-900/20 rounded flex items-center justify-center overflow-hidden" style={{ height: '256px', minHeight: '256px' }}>
+                    {showCharts ? (
+                      <ResponsiveContainer width="99%" height="100%" minWidth={0} minHeight={0}>
+                      <AreaChart data={state.history} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                          <defs>
+                          <linearGradient id="colorNetWorth" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
+                              <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                          </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                          <XAxis dataKey="month" hide />
+                          <YAxis 
+                            stroke="#9ca3af" 
+                            tickFormatter={formatAxisNumber} 
+                            fontSize={10} 
+                            width={40} 
+                            domain={['dataMin', 'dataMax']} 
+                          />
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: '#1f2937', border: 'none', color: '#fff', borderRadius: '8px' }}
+                            formatter={(value: number) => [formatMoney(value), t('overview.net_worth')]}
+                            labelFormatter={(label) => `${t('nav.month')} ${label}`}
+                          />
+                          <Area type="monotone" dataKey="netWorth" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorNetWorth)" />
+                      </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="animate-pulse text-gray-600 font-mono text-xs uppercase tracking-widest">{t('header.loading')}</div>
+                    )}
+                </div>
+            </Card>
+        </div>
+        <div>
+            <Card title={t('overview.exp')} className="h-[300px]">
+                <div className="space-y-4 max-h-full overflow-y-auto pr-2 custom-scrollbar">
+                    {Object.entries(state.experience).map(([cat, years]) => (
+                        <div key={cat} className="flex flex-col">
+                            <div className="flex justify-between text-sm mb-1">
+                                <span className="text-gray-300">{getCatName(cat as JobCategory)}</span>
+                                <span className="font-bold text-white">{Math.floor(years)} {t('overview.years')}</span>
+                            </div>
+                            <div className="w-full bg-gray-700 rounded-full h-2">
+                                <div className="bg-blue-500 h-2 rounded-full transition-all duration-300" style={{ width: `${Math.min(years * 10, 100)}%` }}></div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </Card>
+        </div>
+      </div>
+
+      <Card title={t('overview.logs')} className="h-64 overflow-y-auto">
+        <div className="flex flex-col gap-2">
+          {state.messages.map(msg => (
+            <div key={msg.id} className={`p-2 rounded border-l-2 text-sm ${
+              msg.type === 'success' ? 'bg-emerald-900/30 border-emerald-500' :
+              msg.type === 'danger' ? 'bg-red-900/30 border-red-500' :
+              msg.type === 'warning' ? 'bg-yellow-900/30 border-yellow-500' :
+              'bg-gray-700/30 border-blue-500'
+            }`}>
+              <span className="text-gray-400 text-xs mr-2">[{msg.date}]</span>
+              {msg.text}
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+
+  const renderEducation = () => {
+    const levels = [EducationLevel.NONE, EducationLevel.HIGH_SCHOOL, EducationLevel.BACHELOR, EducationLevel.MASTER, EducationLevel.MBA];
+    const currentLevelIdx = levels.indexOf(state.education);
+
+    return (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6" key="edu-tab">
+            <Card title={t('edu.degrees')}>
+             <div className="text-xs text-gray-400 mb-6">{t('edu.degrees_desc')}</div>
+             <div className="space-y-4 relative pl-2">
+                 <div className="absolute left-[26px] top-6 bottom-6 w-0.5 bg-gray-700 z-0"></div>
+                 {levels.slice(1).map((lvl, idx) => {
+                     const realIdx = idx + 1; 
+                     const isOwned = currentLevelIdx >= realIdx;
+                     const isNext = currentLevelIdx === realIdx - 1;
+                     const isLocked = currentLevelIdx < realIdx - 1;
+                     const isStudying = state.activeCourse?.id === lvl;
+                     
+                     return (
+                         <div key={lvl} className={`relative z-10 flex items-center gap-4 p-4 rounded-xl border bg-gray-900 transition-all ${
+                             isOwned ? 'border-emerald-500/50 bg-emerald-900/10' : 
+                             isStudying ? 'border-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.2)]' :
+                             isNext ? 'border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.2)]' : 'border-gray-800 opacity-60'
+                         }`}>
+                             <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 border-4 ${
+                                 isOwned ? 'bg-emerald-500 border-gray-900 text-white' : 
+                                 isStudying ? 'bg-yellow-500 border-gray-900 text-black animate-pulse' :
+                                 isNext ? 'bg-blue-600 border-gray-900 text-white' : 'bg-gray-800 border-gray-900 text-gray-500'
+                             }`}>
+                                 {isOwned ? <CheckCircle2 size={24} /> : isLocked ? <Lock size={20} /> : <GraduationCap size={24} />}
+                             </div>
+                             <div className="flex-1">
+                                 <div className="font-bold text-base">{getEduTitle(lvl)}</div>
+                                 {!isOwned && (
+                                     <div className="text-xs text-gray-400 mt-1">
+                                         {t('edu.cost')}: <span className="text-white">{formatMoney(EDUCATION_COSTS[lvl])}</span> • {t('edu.duration')}: {EDUCATION_DURATIONS[lvl]} {t('edu.months')}
+                                     </div>
+                                 )}
+                                 {isOwned && <div className="text-xs text-emerald-400 mt-1">{t('edu.owned')}</div>}
+                             </div>
+                             {!isOwned && !isLocked && !isStudying && (
+                                 <Button size="sm" onClick={() => startEducation(lvl)} disabled={!!state.activeCourse || state.cash < EDUCATION_COSTS[lvl]}>
+                                     {t('edu.start')}
+                                 </Button>
+                             )}
+                             {isStudying && (
+                                 <div className="text-sm font-bold font-mono text-yellow-500 whitespace-nowrap bg-yellow-900/20 px-2 py-1 rounded">
+                                     {state.activeCourse?.monthsLeft} {t('edu.months')}
+                                 </div>
+                             )}
+                         </div>
+                     );
+                 })}
+             </div>
+          </Card>
+
+          <Card title={t('edu.courses')}>
+             <div className="text-xs text-gray-400 mb-6">{t('edu.courses_desc')}</div>
+             <div className="space-y-3">
+               {COURSES.map(course => {
+                  const isOwned = state.courses.includes(course.id);
+                  const isStudying = state.activeCourse?.id === course.id;
+                  
+                  return (
+                    <div key={course.id} className="p-4 bg-gray-900 rounded-xl border border-gray-700 flex flex-col md:flex-row justify-between md:items-center gap-3">
+                        <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                                <span className="font-bold text-base">{getCourseTitle(course)}</span>
+                                {isOwned && <span className="text-[10px] bg-emerald-900 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20">{t('edu.owned')}</span>}
+                            </div>
+                            <div className="text-sm text-emerald-400 font-mono mt-1">{getCourseDesc(course)}</div>
+                            <div className="text-xs text-gray-500 mt-1">{formatMoney(course.cost)} • {course.durationMonths} {t('edu.months')}</div>
+                        </div>
+                        
+                        {!isOwned && !isStudying && (
+                            <Button size="sm" variant="secondary" onClick={() => buyCourse(course)} disabled={!!state.activeCourse || state.cash < course.cost}>
+                                {t('edu.buy')}
+                            </Button>
+                        )}
+                        {isStudying && (
+                             <span className="text-sm font-mono text-yellow-500 bg-yellow-900/20 px-2 py-1 rounded text-center">{state.activeCourse?.monthsLeft} {t('edu.months')}</span>
+                        )}
+                    </div>
+                  )
+               })}
+             </div>
+          </Card>
+        </div>
+    );
+  }
+
+  const renderJobs = () => {
+    const levels = [EducationLevel.NONE, EducationLevel.HIGH_SCHOOL, EducationLevel.BACHELOR, EducationLevel.MASTER, EducationLevel.MBA];
+    const currentLevelIdx = levels.indexOf(state.education);
+
+    return (
+        <div className="space-y-6" key="jobs-tab">
+            {state.currentJob ? (
+                <Card title={t('jobs.your_job')} className="border-l-4 border-l-emerald-500 bg-emerald-900/5">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div>
+                            <h2 className="text-2xl font-bold text-white">{getJobTitle(state.currentJob)}</h2>
+                            <div className="text-sm text-gray-400 mt-1">{t('jobs.industry')}: {getCatName(state.currentJob.category)}</div>
+                            <div className="text-xl font-mono text-emerald-400 mt-2 font-bold">{formatMoney(calculateTotalSalary(state.currentJob, state.courses, state.workIntensity))} <span className="text-sm text-gray-500 font-sans font-normal">{t('overview.per_month')}</span></div>
+                        </div>
+
+                        <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 w-full md:w-auto">
+                            <div className="text-xs text-gray-400 mb-2 uppercase font-bold text-center">{t('jobs.intensity')}</div>
+                            <div className="flex gap-1">
+                                <button 
+                                    onClick={() => setWorkIntensity('relaxed')}
+                                    className={`flex-1 px-3 py-2 rounded text-xs flex flex-col items-center gap-1 transition-colors ${state.workIntensity === 'relaxed' ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}
+                                >
+                                    <Coffee size={16} />
+                                    <span>{t('jobs.mode_relaxed')}</span>
+                                </button>
+                                <button 
+                                    onClick={() => setWorkIntensity('normal')}
+                                    className={`flex-1 px-3 py-2 rounded text-xs flex flex-col items-center gap-1 transition-colors ${state.workIntensity === 'normal' ? 'bg-emerald-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}
+                                >
+                                    <Briefcase size={16} />
+                                    <span>{t('jobs.mode_normal')}</span>
+                                </button>
+                                <button 
+                                    onClick={() => setWorkIntensity('hard')}
+                                    className={`flex-1 px-3 py-2 rounded text-xs flex flex-col items-center gap-1 transition-colors ${state.workIntensity === 'hard' ? 'bg-orange-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}
+                                >
+                                    <Zap size={16} />
+                                    <span>{t('jobs.mode_hard')}</span>
+                                </button>
+                            </div>
+                            <div className="mt-2 text-[10px] text-center min-h-[1.25rem] font-medium">
+                                {state.workIntensity === 'relaxed' && <span className="text-blue-300">{t('jobs.details_relaxed')}</span>}
+                                {state.workIntensity === 'normal' && <span className="text-gray-400">{t('jobs.details_normal')}</span>}
+                                {state.workIntensity === 'hard' && <span className="text-orange-400">{t('jobs.details_hard')}</span>}
+                            </div>
+                        </div>
+                        <Button variant="danger" onClick={quitJob} className="h-full">{t('jobs.quit')}</Button>
+                    </div>
+                </Card>
+            ) : (
+                <Card className="bg-gray-800/50 border-dashed border-2 border-gray-700">
+                    <div className="text-center py-8">
+                        <Briefcase size={48} className="mx-auto text-gray-600 mb-4" />
+                        <h3 className="text-xl font-bold text-gray-400">{t('jobs.unemployed')}</h3>
+                    </div>
+                </Card>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {(Object.keys(CATEGORY_NAMES.ru) as JobCategory[]).map(cat => {
+                    const jobsInCat = JOBS.filter(j => j.category === cat).sort((a,b) => a.reqExpYears - b.reqExpYears);
+                    const myExp = state.experience[cat] || 0;
+                    return (
+                        <Card key={cat} title={getCatName(cat)} className="h-full flex flex-col">
+                            <div className="mb-4 flex items-center justify-between text-xs bg-gray-900 p-2 rounded border border-gray-700">
+                                <span className="text-gray-400">{t('overview.exp')}:</span>
+                                <span className="font-bold text-blue-400">{Math.floor(myExp)} {t('overview.years')}</span>
+                            </div>
+                            <div className="space-y-3 flex-1">
+                                {jobsInCat.map(job => {
+                                    const isCurrent = state.currentJob?.id === job.id;
+                                    const reqLvlIdx = levels.indexOf(job.reqEducation);
+                                    const hasEdu = currentLevelIdx >= reqLvlIdx;
+                                    const hasExp = myExp >= job.reqExpYears;
+                                    const canApply = hasEdu && hasExp;
+                                    return (
+                                        <div key={job.id} className={`p-3 rounded border relative overflow-hidden ${isCurrent ? 'border-emerald-500 bg-emerald-900/20' : 'border-gray-700 bg-gray-900'}`}>
+                                            <div className="flex justify-between items-start mb-1">
+                                                <div className="font-bold text-sm text-gray-200">{getJobTitle(job)}</div>
+                                                <div className="text-emerald-400 text-xs font-mono">{formatMoney(job.salary)}</div>
+                                            </div>
+                                            <div className="text-[10px] space-y-1 mb-2">
+                                                <div className={hasEdu ? "text-gray-500" : "text-red-400 flex items-center gap-1"}>
+                                                    {!hasEdu && <Lock size={10}/>} {getEduTitle(job.reqEducation)}
+                                                </div>
+                                                <div className={hasExp ? "text-gray-500" : "text-red-400 flex items-center gap-1"}>
+                                                    {!hasExp && <Lock size={10}/>} {job.reqExpYears} {t('overview.years')}
+                                                </div>
+                                            </div>
+                                            {!isCurrent && (
+                                                <Button size="sm" variant={canApply ? "secondary" : "ghost"} className="w-full py-1 text-xs" onClick={() => applyForJob(job)} disabled={!canApply}>
+                                                    {canApply ? t('jobs.apply') : t('jobs.unavailable')}
+                                                </Button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </Card>
+                    );
+                })}
+            </div>
+        </div>
+    );
+  }
+
+  const renderMarket = () => {
+    const marketTrend = state.stocks.filter(s => {
+      const prev = s.history[s.history.length - 2] || s.history[0];
+      return s.price >= prev;
+    }).length > state.stocks.length / 2 ? 'bull' : 'bear';
+
+    const filteredStocks = state.stocks.filter(s => s.type === marketSubTab);
+    const myAssets = state.stocks.filter(s => s.owned > 0);
+
+    return (
+      <div className="space-y-8" key="market-tab">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+           <Card className="bg-gradient-to-br from-gray-900 to-gray-800 border-gray-700">
+              <div className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">{t('market.liquidity')}</div>
+              <div className="text-2xl font-mono text-white font-bold">{formatMoney(state.cash)}</div>
+           </Card>
+           <Card className="bg-gradient-to-br from-gray-900 to-gray-800 border-gray-700">
+              <div className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">{t('market.portfolio')}</div>
+              <div className="text-2xl font-mono text-blue-400 font-bold">
+                {formatMoney(state.stocks.reduce((acc, s) => acc + (s.price * s.owned), 0))}
+              </div>
+           </Card>
+           <Card className="bg-gradient-to-br from-gray-900 to-gray-800 border-gray-700">
+               <div className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">{t('market.trend')}</div>
+               <div className={`text-2xl font-bold flex items-center gap-2 ${marketTrend === 'bull' ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {marketTrend === 'bull' ? 'BULLISH' : 'BEARISH'}
+                  {marketTrend === 'bull' ? <ArrowUpRight size={24}/> : <ArrowDownRight size={24}/>}
+               </div>
+           </Card>
+        </div>
+
+        {myAssets.length > 0 && (
+            <Card title={t('market.my_assets')} className="border-l-4 border-l-indigo-500 bg-indigo-900/10">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {myAssets.map(stock => {
+                        const profit = (stock.price - stock.averageCost) * stock.owned;
+                        const isProfit = profit >= 0;
+                        return (
+                            <div key={stock.symbol} className="bg-gray-900 p-3 rounded-lg border border-gray-700 flex justify-between items-center">
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="font-bold text-sm text-white">{getStockName(stock)}</div>
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 font-mono">{stock.symbol}</span>
+                                    </div>
+                                    <div className="text-[10px] text-gray-400 mt-1">
+                                        {formatMoneyDecimal(stock.price)} x {stock.owned % 1 === 0 ? stock.owned : stock.owned.toFixed(4)}
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-sm font-bold text-white">{formatMoney(stock.price * stock.owned)}</div>
+                                    <div className={`text-[10px] ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {isProfit ? '+' : ''}{formatMoney(profit)}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </Card>
+        )}
+
+        <div className="flex gap-4 border-b border-gray-800 pb-2">
+            <button onClick={() => setMarketSubTab('stock')} className={`flex items-center gap-2 px-6 py-3 rounded-t-lg transition-colors font-bold ${marketSubTab === 'stock' ? 'bg-gray-800 text-emerald-400 border-b-2 border-emerald-400' : 'text-gray-500 hover:text-gray-300'}`}>
+                <LineChart size={20} /> {t('market.stocks')}
+            </button>
+            <button onClick={() => setMarketSubTab('crypto')} className={`flex items-center gap-2 px-6 py-3 rounded-t-lg transition-colors font-bold ${marketSubTab === 'crypto' ? 'bg-gray-800 text-purple-400 border-b-2 border-purple-400' : 'text-gray-500 hover:text-gray-300'}`}>
+                <Coins size={20} /> {t('market.crypto')}
+            </button>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          {filteredStocks.map(stock => {
+            const currentPrice = stock.price;
+            const prevPrice = stock.history[stock.history.length - 2] || stock.history[0];
+            const isUp = currentPrice >= prevPrice;
+            const percentChange = ((currentPrice - prevPrice) / prevPrice) * 100;
+            const profitLoss = (currentPrice - stock.averageCost) * stock.owned;
+            const isProfit = profitLoss >= 0;
+            const chartColor = stock.type === 'crypto' ? (isUp ? '#a855f7' : '#ef4444') : (isUp ? '#10b981' : '#ef4444');
+
+            return (
+              <div key={`${stock.symbol}-${marketSubTab}`} className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden hover:border-gray-600 transition-colors flex flex-col min-w-0">
+                 <div className="p-4 pb-2 flex justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg flex items-center justify-center font-bold border bg-gray-800 border-gray-700 text-gray-400">
+                            {stock.type === 'crypto' ? <Coins size={20} /> : stock.symbol[0]}
+                        </div>
+                        <div>
+                            <div className="font-bold text-sm text-white">{getStockName(stock)}</div>
+                            <div className="text-[10px] text-gray-500 font-mono">{stock.symbol}</div>
+                        </div>
+                    </div>
+                    <div className="text-right">
+                        <div className="text-xl font-mono font-bold text-white">{formatMoneyDecimal(currentPrice)}</div>
+                        <div className={`text-[10px] font-bold flex justify-end items-center ${isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {isUp ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+                            {Math.abs(percentChange).toFixed(2)}%
+                        </div>
+                    </div>
+                 </div>
+
+                 <div className="h-24 w-full bg-gray-950/20 relative flex items-center justify-center" style={{ height: '96px', minHeight: '96px' }}>
+                    {showCharts ? (
+                      <ResponsiveContainer width="99%" height="100%" minWidth={0} minHeight={0}>
+                          <AreaChart data={stock.history.slice(-20).map((p, i) => ({ i, p }))} margin={{ top: 5, right: 0, left: 0, bottom: 5 }}>
+                          <defs>
+                              <linearGradient id={`grad${stock.symbol}`} x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor={chartColor} stopOpacity={0.2}/>
+                              <stop offset="100%" stopColor={chartColor} stopOpacity={0}/>
+                              </linearGradient>
+                          </defs>
+                          <YAxis 
+                            domain={['dataMin', 'dataMax']} 
+                            orientation="right"
+                            tick={{fontSize: 9, fill: '#6b7280'}}
+                            width={35}
+                            axisLine={false}
+                            tickLine={false}
+                            tickFormatter={(value) => value >= 1000 ? `${(value/1000).toFixed(1)}k` : value.toFixed(0)}
+                          />
+                          <Area type="monotone" dataKey="p" stroke={chartColor} strokeWidth={2} fill={`url(#grad${stock.symbol})`} animationDuration={300} />
+                           {stock.averageCost > 0 && <ReferenceLine y={stock.averageCost} stroke="#fbbf24" strokeDasharray="3 3" opacity={0.5} />}
+                          </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="text-[8px] text-gray-800 uppercase font-mono tracking-tighter">{t('header.loading')}</div>
+                    )}
+                 </div>
+
+                 <div className="grid grid-cols-3 gap-2 px-4 py-2 border-t border-b border-gray-800 bg-gray-900/50">
+                     <div className="text-[9px]">
+                         <div className="text-gray-500 uppercase">{t('market.owned')}</div>
+                         <div className="font-mono text-white">{stock.owned % 1 === 0 ? stock.owned : stock.owned.toFixed(4)}</div>
+                     </div>
+                     <div className="text-[9px]">
+                         <div className="text-gray-500 uppercase">{t('market.avg')}</div>
+                         <div className="font-mono text-gray-300">{stock.averageCost > 0 ? formatMoneyDecimal(stock.averageCost) : '-'}</div>
+                     </div>
+                     <div className="text-[9px] text-right">
+                         <div className="text-gray-500 uppercase">P/L</div>
+                         <div className={`font-mono font-bold ${stock.owned === 0 ? 'text-gray-500' : isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
+                             {stock.owned > 0 ? formatMoney(profitLoss) : '-'}
+                         </div>
+                     </div>
+                 </div>
+
+                 <div className="p-2 bg-gray-950">
+                    <button onClick={() => handleOpenTrade(stock)} className="w-full py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-colors flex items-center justify-center gap-2">
+                        <ArrowUpRight size={14} />
+                        {t('market.trade')}
+                    </button>
+                 </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  const renderBank = () => {
+    const scoreColor = state.creditScore >= 750 ? 'text-emerald-400' : state.creditScore >= 600 ? 'text-yellow-400' : 'text-red-400';
+    const scorePercent = Math.max(0, Math.min(100, (state.creditScore - 300) / (850 - 300) * 100));
+    
+    return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" key="bank-tab">
+       {/* Credit Department */}
+       <Card title={t('bank.credit_dept')} className="border-l-4 border-l-red-500">
+         <div className="space-y-6">
+            <div className="flex items-center justify-between bg-gray-900 p-4 rounded-xl border border-gray-700">
+               <div>
+                 <div className="text-gray-400 text-xs uppercase font-bold tracking-wider">{t('bank.score')}</div>
+                 <div className={`text-4xl font-bold mt-1 ${scoreColor}`}>{state.creditScore}</div>
+                 <div className="text-xs text-gray-500 mt-1">300 - 850</div>
+               </div>
+               <div className="relative w-20 h-20">
+                   <div className="w-full h-full rounded-full border-4 border-gray-700"></div>
+                   <div 
+                    className={`absolute top-0 left-0 w-full h-full rounded-full border-4 border-t-transparent border-l-transparent transition-all duration-1000 ${scoreColor === 'text-emerald-400' ? 'border-emerald-500' : scoreColor === 'text-yellow-400' ? 'border-yellow-500' : 'border-red-500'}`} 
+                    style={{ transform: `rotate(${45 + (scorePercent * 1.8)}deg)` }}
+                   ></div>
+                   <Gauge className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gray-600" size={24} />
+               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-800 p-3 rounded-lg">
+                    <div className="text-xs text-gray-400 mb-1">{t('overview.debt')}</div>
+                    <div className="text-xl font-bold text-white">{formatMoney(state.debt)}</div>
+                </div>
+                <div className="bg-gray-800 p-3 rounded-lg">
+                    <div className="text-xs text-gray-400 mb-1">{t('bank.limit')}</div>
+                    <div className="text-xl font-bold text-blue-400">{formatMoney(state.creditLimit)}</div>
+                </div>
+            </div>
+
+            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
+                <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-bold text-gray-300">{t('bank.take_loan')}</span>
+                    <span className="text-xs bg-red-900/50 text-red-300 px-2 py-1 rounded">{formatPercent(state.loanRate)}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                     <Button onClick={() => takeLoan(5000)} size="sm" variant="secondary" disabled={state.debt + 5000 > state.creditLimit}>+ $5k</Button>
+                     <Button onClick={() => takeLoan(20000)} size="sm" variant="secondary" disabled={state.debt + 20000 > state.creditLimit}>+ $20k</Button>
+                     <Button onClick={() => takeLoan(50000)} size="sm" variant="secondary" disabled={state.debt + 50000 > state.creditLimit}>+ $50k</Button>
+                </div>
+            </div>
+
+            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
+                <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-bold text-gray-300">{t('bank.repay')}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                     <Button onClick={() => repayDebt(5000)} size="sm" variant="primary" disabled={state.debt === 0}>- $5k</Button>
+                     <Button onClick={() => repayDebt(20000)} size="sm" variant="primary" disabled={state.debt === 0}>- $20k</Button>
+                     <Button onClick={() => repayDebt(state.debt)} size="sm" variant="primary" disabled={state.debt === 0}>{t('bank.all')}</Button>
+                </div>
+            </div>
+         </div>
+       </Card>
+       
+       {/* Deposit Department */}
+       <Card title={t('bank.deposit_dept')} className="border-l-4 border-l-blue-500">
+           <div className="space-y-6">
+                <div className="bg-blue-900/10 p-4 rounded-xl border border-blue-500/20 text-center">
+                    <PiggyBank className="mx-auto text-blue-400 mb-2" size={32} />
+                    <div className="text-xs text-blue-300 uppercase tracking-widest mb-1">{t('bank.savings')}</div>
+                    <div className="text-3xl font-bold text-white mb-2">{formatMoney(state.deposit)}</div>
+                    <div className="inline-block px-3 py-1 bg-blue-500/20 rounded-full text-xs text-blue-300 font-mono">
+                        APY: {formatPercent(state.depositRate)}
+                    </div>
+                </div>
+
+                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
+                    <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-bold text-gray-300">{t('bank.deposit_add')}</span>
+                        <span className="text-[10px] text-gray-500">{t('bank.from_cash')}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                        <Button onClick={() => depositCash(1000)} size="sm" variant="secondary" disabled={state.cash < 1000}>+ $1k</Button>
+                        <Button onClick={() => depositCash(10000)} size="sm" variant="secondary" disabled={state.cash < 10000}>+ $10k</Button>
+                        <Button onClick={() => depositCash(state.cash)} size="sm" variant="secondary" disabled={state.cash <= 0}>{t('bank.all')}</Button>
+                    </div>
+                </div>
+
+                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
+                    <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-bold text-gray-300">{t('bank.deposit_withdraw')}</span>
+                        <span className="text-[10px] text-gray-500">{t('bank.to_hand')}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                        <Button onClick={() => withdrawDeposit(1000)} size="sm" variant="ghost" className="border border-gray-600" disabled={state.deposit < 1000}>- $1k</Button>
+                        <Button onClick={() => withdrawDeposit(10000)} size="sm" variant="ghost" className="border border-gray-600" disabled={state.deposit < 10000}>- $10k</Button>
+                        <Button onClick={() => withdrawDeposit(state.deposit)} size="sm" variant="ghost" className="border border-gray-600" disabled={state.deposit <= 0}>{t('bank.all')}</Button>
+                    </div>
+                </div>
+
+                <div className="p-3 rounded bg-gray-900 border border-gray-800 text-xs text-gray-400">
+                    <div className="flex items-center gap-2 mb-1 text-gray-300 font-bold">
+                        <BrainCircuit size={14} />
+                        {t('bank.advice')}
+                    </div>
+                    {t('bank.advice_text')}
+                </div>
+           </div>
+       </Card>
+    </div>
+  )};
+
+  const currentTitle = COURSES.find(c => c.id === state.activeCourse?.id) 
+    ? getCourseTitle(COURSES.find(c => c.id === state.activeCourse?.id)!)
+    : state.activeCourse?.id;
+
+  return (
+    <div className="flex h-screen bg-gray-900 text-gray-100 font-sans selection:bg-emerald-500/30">
+      <aside className="w-20 lg:w-64 bg-gray-950 border-r border-gray-800 flex flex-col justify-between shrink-0 relative z-20">
+        <div>
+          <div className="h-16 flex items-center justify-center lg:justify-start lg:px-6 border-b border-gray-800">
+             <Landmark className="w-8 h-8 text-emerald-500" />
+             <span className="ml-3 font-bold text-xl hidden lg:block tracking-tight">Tycoon<span className="text-emerald-500">{MAX_YEARS}</span></span>
+          </div>
+          <nav className="p-4 space-y-2">
+            <NavBtn active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} icon={<TrendingUp size={20} />} label={t('nav.overview')} />
+            <NavBtn active={activeTab === 'education'} onClick={() => setActiveTab('education')} icon={<GraduationCap size={20} />} label={t('nav.education')} />
+            <NavBtn active={activeTab === 'jobs'} onClick={() => setActiveTab('jobs')} icon={<Briefcase size={20} />} label={t('nav.jobs')} />
+            <NavBtn active={activeTab === 'market'} onClick={() => setActiveTab('market')} icon={<DollarSign size={20} />} label={t('nav.market')} />
+            <NavBtn active={activeTab === 'bank'} onClick={() => setActiveTab('bank')} icon={<Landmark size={20} />} label={t('nav.bank')} />
+          </nav>
+        </div>
+        <div className="p-4 border-t border-gray-800">
+          <button 
+            onClick={() => setShowSettings(true)}
+            className="w-full flex items-center justify-center lg:justify-start p-2 rounded hover:bg-gray-800 text-gray-400 hover:text-white transition-colors mb-4"
+          >
+             <Settings size={20} />
+             <span className="ml-3 font-medium hidden lg:block">{t('settings.title')}</span>
+          </button>
+
+          <div className="hidden lg:block space-y-2 text-sm text-gray-400">
+            <div className="flex justify-between">
+              <span>{t('nav.time')}</span>
+              <span className="text-white">{t('nav.year')}{getYearNum(state.gameMonth)} / {t('nav.month')}{getMonthNum(state.gameMonth)}</span>
+            </div>
+             <div className="w-full bg-gray-800 rounded-full h-1 mt-2">
+              <div className="bg-emerald-500 h-1 rounded-full transition-all duration-500" style={{ width: `${(state.gameMonth / MAX_MONTHS) * 100}%` }}></div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+        <header className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 shrink-0">
+           <h1 className="text-xl font-bold text-white capitalize">
+             {activeTab === 'overview' ? t('nav.overview') : activeTab === 'education' ? t('nav.education') : activeTab === 'jobs' ? t('nav.jobs') : activeTab === 'market' ? t('nav.market') : t('nav.bank')}
+           </h1>
+           <div className="flex items-center gap-4">
+             <div className="hidden md:flex items-center gap-6 mr-4">
+                {state.activeCourse && (
+                  <div className="text-right flex items-center gap-2 px-2 py-1 bg-yellow-500/10 rounded border border-yellow-500/20">
+                    <Hourglass size={12} className="text-yellow-500 animate-spin-slow" />
+                    <div className="font-bold text-[10px] text-yellow-400">{currentTitle}</div>
+                  </div>
+                )}
+                <div className="text-right">
+                  <div className="text-[10px] text-gray-400 uppercase">{t('header.cash')}</div>
+                  <div className={`font-mono font-bold text-sm ${state.cash < 0 ? 'text-red-500' : 'text-emerald-400'}`}>{formatMoney(state.cash)}</div>
+                </div>
+             </div>
+             <Button onClick={nextMonth} disabled={state.isGameOver || isLoading} className="w-36 shadow-emerald-500/20 shadow-lg">
+               {isLoading ? t('header.loading') : state.isGameOver ? t('header.game_over') : t('header.next_month')}
+             </Button>
+           </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-6 scroll-smooth" ref={scrollRef}>
+          {state.isGameOver && (
+             <Card className="mb-6 p-6 bg-yellow-500/10 border-yellow-500/50 flex items-center gap-4">
+               <Trophy className="text-yellow-500 w-12 h-12" />
+               <div>
+                 <h2 className="text-2xl font-bold text-white">{t('end.title')}!</h2>
+                 <p className="text-gray-300">{t('end.subtitle')} <span className="text-white font-bold text-xl">{formatMoney(state.netWorth)}</span></p>
+               </div>
+             </Card>
+          )}
+
+          {activeTab === 'overview' && renderOverview()}
+          {activeTab === 'education' && renderEducation()}
+          {activeTab === 'jobs' && renderJobs()}
+          {activeTab === 'market' && renderMarket()}
+          {activeTab === 'bank' && renderBank()}
+        </div>
+
+        {/* Trade Modal */}
+        {selectedStock && (
+            <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl w-full max-w-sm shadow-2xl relative animate-in fade-in zoom-in duration-200">
+                    <button onClick={() => setSelectedStock(null)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
+                        <X size={24} />
+                    </button>
+                    
+                    <div className="mb-4">
+                        <div className="text-gray-400 text-xs uppercase font-bold tracking-widest">{t('trade.title')}</div>
+                        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                             {getStockName(selectedStock)}
+                             <span className="text-sm font-normal text-gray-500 font-mono bg-gray-800 px-2 rounded">{selectedStock.symbol}</span>
+                        </h2>
+                        <div className="text-xl font-mono text-emerald-400 mt-1">{formatMoneyDecimal(selectedStock.price)}</div>
+                    </div>
+
+                    <div className="bg-gray-800 p-1 rounded-lg flex mb-4">
+                        <button 
+                            className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${tradeMode === 'buy' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                            onClick={() => setTradeMode('buy')}
+                        >
+                            {t('trade.buy')}
+                        </button>
+                        <button 
+                            className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${tradeMode === 'sell' ? 'bg-red-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                            onClick={() => setTradeMode('sell')}
+                        >
+                            {t('trade.sell')}
+                        </button>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs text-gray-400 font-bold mb-1">{t('trade.amount')}</label>
+                            <div className="relative">
+                                <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                                <input 
+                                    type="number" 
+                                    value={tradeAmount}
+                                    onChange={(e) => setTradeAmount(e.target.value)}
+                                    placeholder="0"
+                                    className="w-full bg-gray-950 border border-gray-800 rounded-lg py-3 pl-9 pr-16 text-white font-mono focus:outline-none focus:border-indigo-500 transition-colors"
+                                />
+                                <button 
+                                    onClick={handleMaxTrade}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded transition-colors"
+                                >
+                                    {t('trade.max')}
+                                </button>
+                            </div>
+                            <div className="flex justify-between mt-2 text-xs">
+                                <span className="text-gray-500">{t('trade.est_qty')}:</span>
+                                <span className="font-mono text-white">
+                                    {tradeAmount && !isNaN(parseFloat(tradeAmount)) 
+                                        ? (parseFloat(tradeAmount) / selectedStock.price).toFixed(4) 
+                                        : '0.0000'
+                                    }
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 pt-2">
+                            <Button variant="ghost" onClick={() => setSelectedStock(null)}>
+                                {t('trade.cancel')}
+                            </Button>
+                            <Button 
+                                variant={tradeMode === 'buy' ? 'primary' : 'danger'} 
+                                onClick={handleExecuteTrade}
+                                disabled={!tradeAmount || parseFloat(tradeAmount) <= 0}
+                            >
+                                {t('trade.confirm')}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Settings Modal */}
+        {showSettings && (
+            <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl w-full max-w-md shadow-2xl relative max-h-[90vh] overflow-y-auto">
+                    <button onClick={() => setShowSettings(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
+                        <X size={24} />
+                    </button>
+                    <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                        <Settings size={24} />
+                        {t('settings.title')}
+                    </h2>
+                    
+                    <div className="space-y-6">
+                        <div className="flex items-center justify-between p-4 bg-gray-800 rounded-xl">
+                            <div className="flex items-center gap-3">
+                                <Globe className="text-gray-400" />
+                                <span className="font-bold">{t('settings.lang')}</span>
+                            </div>
+                            <div className="flex bg-gray-900 rounded-lg p-1">
+                                <button 
+                                    onClick={() => setLanguage('ru')}
+                                    className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${language === 'ru' ? 'bg-emerald-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                                >
+                                    RU
+                                </button>
+                                <button 
+                                    onClick={() => setLanguage('en')}
+                                    className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${language === 'en' ? 'bg-emerald-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                                >
+                                    EN
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-gray-800 rounded-xl opacity-50 pointer-events-none grayscale">
+                             <div className="text-center text-sm font-mono text-gray-500">v1.2.0 (Gemini Powered)</div>
+                        </div>
+
+                        {/* ADMIN PANEL */}
+                        <div className="border-t border-gray-800 pt-6">
+                             <div className="flex items-center gap-2 mb-4">
+                                <ShieldAlert size={16} className={isAdmin ? 'text-red-500' : 'text-gray-600'} />
+                                <h3 className="text-sm uppercase font-bold tracking-widest text-gray-500">{t('admin.title')}</h3>
+                             </div>
+
+                             {!isAdmin ? (
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="password" 
+                                        value={adminPin}
+                                        onChange={(e) => setAdminPin(e.target.value)}
+                                        placeholder={t('admin.enter_pin')}
+                                        className="bg-gray-800 border border-gray-700 text-white px-4 py-2 rounded-lg w-full focus:outline-none focus:border-emerald-500"
+                                    />
+                                    <Button variant="secondary" onClick={unlockAdmin}>{t('admin.unlock')}</Button>
+                                </div>
+                             ) : (
+                                <div className="space-y-4 bg-red-900/10 border border-red-900/30 p-4 rounded-xl">
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <Button size="sm" variant="danger" onClick={() => adminAddCash(50000)}>+ $50k</Button>
+                                        <Button size="sm" variant="danger" onClick={() => adminAddCash(1000000)}>+ $1M</Button>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs text-red-400 font-bold mb-1 block">{t('admin.set_score')}: {state.creditScore}</label>
+                                        <input 
+                                            type="range" 
+                                            min="300" 
+                                            max="850" 
+                                            value={state.creditScore} 
+                                            onChange={adminSetScore}
+                                            className="w-full accent-red-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs text-red-400 font-bold mb-1 block">{t('admin.set_edu')}</label>
+                                        <select 
+                                            className="w-full bg-gray-900 border border-red-900/50 text-xs p-2 rounded text-white"
+                                            onChange={adminSetEdu}
+                                            value={state.education}
+                                        >
+                                            {Object.keys(EDUCATION_TITLES[language]).map(key => (
+                                                <option key={key} value={key}>{EDUCATION_TITLES[language][key as EducationLevel]}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs text-red-400 font-bold mb-1 block">{t('admin.set_job')}</label>
+                                        <select 
+                                            className="w-full bg-gray-900 border border-red-900/50 text-xs p-2 rounded text-white"
+                                            onChange={adminSetJob}
+                                            value={state.currentJob?.id || ''}
+                                        >
+                                            <option value="">{t('jobs.unemployed')}</option>
+                                            {JOBS.map(job => (
+                                                <option key={job.id} value={job.id}>{getJobTitle(job)}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                             )}
+                        </div>
+
+                        <Button className="w-full" onClick={() => setShowSettings(false)}>
+                             OK
+                        </Button>
+                    </div>
+                </div>
+            </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+const NavBtn = ({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) => (
+  <button onClick={onClick} className={`w-full flex items-center p-3 rounded-lg transition-colors ${active ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/50' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
+    <div className="flex justify-center lg:w-auto w-full">{icon}</div>
+    <span className="ml-3 font-medium hidden lg:block">{label}</span>
+  </button>
+);
