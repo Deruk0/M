@@ -17,6 +17,9 @@ try {
   console.error("Failed to initialize GoogleGenAI", e);
 }
 
+// Helper to let the UI know if AI is active
+export const isAiEnabled = () => !!ai;
+
 export const generateGameEvent = async (
   currentYear: number, 
   currentJob: { title: string, category: JobCategory } | null, 

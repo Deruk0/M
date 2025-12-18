@@ -34,7 +34,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 import { PlayerState, Stock, Job, EducationLevel, LogMessage, Course, JobCategory, Language } from './types';
 import { INITIAL_STOCKS, JOBS, MAX_MONTHS, STARTING_AGE_MONTHS, EDUCATION_COSTS, MAX_YEARS, COURSES, EDUCATION_DURATIONS, CATEGORY_NAMES, TRANSLATIONS, EDUCATION_TITLES } from './constants';
-import { generateGameEvent } from './services/geminiService';
+import { generateGameEvent, isAiEnabled } from './services/geminiService';
 import { Button } from './components/Button';
 import { Card } from './components/Card';
 
@@ -102,6 +102,14 @@ export default function App() {
          : `Welcome! Your goal is to maximize wealth in ${MAX_YEARS} years.`;
        
        addLog(welcomeText, 'info');
+
+       // Check if API key is working
+       if (!isAiEnabled()) {
+         const warningText = language === 'ru'
+            ? "ВНИМАНИЕ: API ключ не найден (.env). ИИ события отключены."
+            : "WARNING: API Key missing (.env). AI events disabled.";
+         addLog(warningText, 'danger');
+       }
     }
   }, []); // Run once on mount
 
@@ -1129,365 +1137,280 @@ export default function App() {
                 </div>
                 <div className="bg-gray-800 p-3 rounded-lg">
                     <div className="text-xs text-gray-400 mb-1">{t('bank.limit')}</div>
-                    <div className="text-xl font-bold text-blue-400">{formatMoney(state.creditLimit)}</div>
+                    <div className="text-xl font-bold text-white">{formatMoney(state.creditLimit)}</div>
                 </div>
             </div>
 
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-                <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-bold text-gray-300">{t('bank.take_loan')}</span>
-                    <span className="text-xs bg-red-900/50 text-red-300 px-2 py-1 rounded">{formatPercent(state.loanRate)}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                     <Button onClick={() => takeLoan(5000)} size="sm" variant="secondary" disabled={state.debt + 5000 > state.creditLimit}>+ $5k</Button>
-                     <Button onClick={() => takeLoan(20000)} size="sm" variant="secondary" disabled={state.debt + 20000 > state.creditLimit}>+ $20k</Button>
-                     <Button onClick={() => takeLoan(50000)} size="sm" variant="secondary" disabled={state.debt + 50000 > state.creditLimit}>+ $50k</Button>
-                </div>
-            </div>
+             <div className="p-4 bg-gray-900 rounded-lg border border-gray-700">
+                 <div className="text-xs text-gray-400 mb-2 font-bold uppercase">{t('bank.take_loan')}</div>
+                 <div className="flex gap-2 mb-2">
+                     <Button size="sm" variant="secondary" onClick={() => takeLoan(1000)} disabled={state.debt >= state.creditLimit}>+ $1k</Button>
+                     <Button size="sm" variant="secondary" onClick={() => takeLoan(5000)} disabled={state.debt >= state.creditLimit}>+ $5k</Button>
+                     <Button size="sm" variant="secondary" onClick={() => takeLoan(10000)} disabled={state.debt >= state.creditLimit}>+ $10k</Button>
+                 </div>
+                 <div className="text-[10px] text-gray-500">
+                     {language === 'ru' ? 'Ставка:' : 'Rate:'} {(state.loanRate * 100).toFixed(1)}% / {language === 'ru' ? 'год' : 'yr'}
+                 </div>
+             </div>
 
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-                <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-bold text-gray-300">{t('bank.repay')}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                     <Button onClick={() => repayDebt(5000)} size="sm" variant="primary" disabled={state.debt === 0}>- $5k</Button>
-                     <Button onClick={() => repayDebt(20000)} size="sm" variant="primary" disabled={state.debt === 0}>- $20k</Button>
-                     <Button onClick={() => repayDebt(state.debt)} size="sm" variant="primary" disabled={state.debt === 0}>{t('bank.all')}</Button>
-                </div>
-            </div>
+             <div className="p-4 bg-gray-900 rounded-lg border border-gray-700">
+                 <div className="text-xs text-gray-400 mb-2 font-bold uppercase">{t('bank.repay')}</div>
+                 <div className="flex gap-2">
+                     <Button size="sm" variant="primary" onClick={() => repayDebt(1000)} disabled={state.debt <= 0}>- $1k</Button>
+                     <Button size="sm" variant="primary" onClick={() => repayDebt(5000)} disabled={state.debt <= 0}>- $5k</Button>
+                     <Button size="sm" variant="primary" onClick={() => repayDebt(state.debt)} disabled={state.debt <= 0}>{t('bank.all')}</Button>
+                 </div>
+             </div>
          </div>
        </Card>
-       
-       {/* Deposit Department */}
+
+       {/* Investment Bank */}
        <Card title={t('bank.deposit_dept')} className="border-l-4 border-l-blue-500">
-           <div className="space-y-6">
-                <div className="bg-blue-900/10 p-4 rounded-xl border border-blue-500/20 text-center">
-                    <PiggyBank className="mx-auto text-blue-400 mb-2" size={32} />
-                    <div className="text-xs text-blue-300 uppercase tracking-widest mb-1">{t('bank.savings')}</div>
-                    <div className="text-3xl font-bold text-white mb-2">{formatMoney(state.deposit)}</div>
-                    <div className="inline-block px-3 py-1 bg-blue-500/20 rounded-full text-xs text-blue-300 font-mono">
-                        APY: {formatPercent(state.depositRate)}
-                    </div>
-                </div>
+          <div className="space-y-6">
+              <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 flex items-center justify-between">
+                  <div>
+                      <div className="text-gray-400 text-xs uppercase font-bold tracking-wider">{t('bank.savings')}</div>
+                      <div className="text-3xl font-bold text-blue-400 mt-1">{formatMoney(state.deposit)}</div>
+                      <div className="text-xs text-emerald-400 mt-1 flex items-center gap-1">
+                          <TrendingUp size={12} />
+                          +{(state.depositRate * 100).toFixed(2)}% APY
+                      </div>
+                  </div>
+                  <div className="w-12 h-12 bg-blue-900/30 rounded-full flex items-center justify-center text-blue-400">
+                      <PiggyBank size={24} />
+                  </div>
+              </div>
 
-                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-                    <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-bold text-gray-300">{t('bank.deposit_add')}</span>
-                        <span className="text-[10px] text-gray-500">{t('bank.from_cash')}</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                        <Button onClick={() => depositCash(1000)} size="sm" variant="secondary" disabled={state.cash < 1000}>+ $1k</Button>
-                        <Button onClick={() => depositCash(10000)} size="sm" variant="secondary" disabled={state.cash < 10000}>+ $10k</Button>
-                        <Button onClick={() => depositCash(state.cash)} size="sm" variant="secondary" disabled={state.cash <= 0}>{t('bank.all')}</Button>
-                    </div>
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-gray-900 p-3 rounded-lg border border-gray-700">
+                      <div className="text-xs text-gray-400 mb-2 font-bold uppercase">{t('bank.deposit_add')}</div>
+                      <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="secondary" onClick={() => depositCash(1000)} disabled={state.cash < 1000}>+$1k</Button>
+                          <Button size="sm" variant="secondary" onClick={() => depositCash(5000)} disabled={state.cash < 5000}>+$5k</Button>
+                          <Button size="sm" variant="secondary" onClick={() => depositCash(state.cash)} disabled={state.cash <= 0}>{t('bank.all')}</Button>
+                      </div>
+                      <div className="text-[10px] text-gray-500 mt-1">{t('bank.from_cash')}</div>
+                  </div>
 
-                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-                    <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-bold text-gray-300">{t('bank.deposit_withdraw')}</span>
-                        <span className="text-[10px] text-gray-500">{t('bank.to_hand')}</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                        <Button onClick={() => withdrawDeposit(1000)} size="sm" variant="ghost" className="border border-gray-600" disabled={state.deposit < 1000}>- $1k</Button>
-                        <Button onClick={() => withdrawDeposit(10000)} size="sm" variant="ghost" className="border border-gray-600" disabled={state.deposit < 10000}>- $10k</Button>
-                        <Button onClick={() => withdrawDeposit(state.deposit)} size="sm" variant="ghost" className="border border-gray-600" disabled={state.deposit <= 0}>{t('bank.all')}</Button>
-                    </div>
-                </div>
-
-                <div className="p-3 rounded bg-gray-900 border border-gray-800 text-xs text-gray-400">
-                    <div className="flex items-center gap-2 mb-1 text-gray-300 font-bold">
-                        <BrainCircuit size={14} />
-                        {t('bank.advice')}
-                    </div>
-                    {t('bank.advice_text')}
-                </div>
-           </div>
+                  <div className="bg-gray-900 p-3 rounded-lg border border-gray-700">
+                      <div className="text-xs text-gray-400 mb-2 font-bold uppercase">{t('bank.deposit_withdraw')}</div>
+                      <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="primary" onClick={() => withdrawDeposit(1000)} disabled={state.deposit < 1000}>-$1k</Button>
+                          <Button size="sm" variant="primary" onClick={() => withdrawDeposit(5000)} disabled={state.deposit < 5000}>-$5k</Button>
+                          <Button size="sm" variant="primary" onClick={() => withdrawDeposit(state.deposit)} disabled={state.deposit <= 0}>{t('bank.all')}</Button>
+                      </div>
+                      <div className="text-[10px] text-gray-500 mt-1">{t('bank.to_hand')}</div>
+                  </div>
+              </div>
+              
+              <div className="p-3 bg-blue-900/10 border border-blue-500/20 rounded-lg flex gap-3">
+                  <div className="shrink-0 mt-0.5"><div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center text-[10px] font-bold text-white">i</div></div>
+                  <div>
+                      <div className="text-xs font-bold text-blue-300 mb-0.5">{t('bank.advice')}</div>
+                      <div className="text-[10px] text-gray-400 leading-relaxed">{t('bank.advice_text')}</div>
+                  </div>
+              </div>
+          </div>
        </Card>
     </div>
-  )};
-
-  const currentTitle = COURSES.find(c => c.id === state.activeCourse?.id) 
-    ? getCourseTitle(COURSES.find(c => c.id === state.activeCourse?.id)!)
-    : state.activeCourse?.id;
+    );
+  };
 
   return (
-    <div className="flex h-screen bg-gray-900 text-gray-100 font-sans selection:bg-emerald-500/30">
-      <aside className="w-20 lg:w-64 bg-gray-950 border-r border-gray-800 flex flex-col justify-between shrink-0 relative z-20">
-        <div>
-          <div className="h-16 flex items-center justify-center lg:justify-start lg:px-6 border-b border-gray-800">
-             <Landmark className="w-8 h-8 text-emerald-500" />
-             <span className="ml-3 font-bold text-xl hidden lg:block tracking-tight">Tycoon<span className="text-emerald-500">{MAX_YEARS}</span></span>
+    <div className="flex flex-col md:flex-row h-screen bg-gray-950 text-gray-100 font-sans overflow-hidden">
+      {/* Sidebar */}
+      <aside className="w-full md:w-64 bg-gray-900 border-r border-gray-800 flex flex-col md:h-full shrink-0 z-20">
+        <div className="p-6 border-b border-gray-800 flex items-center gap-3">
+          <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-2 rounded-lg shadow-lg shadow-emerald-900/50">
+             <Trophy size={24} className="text-white" />
           </div>
-          <nav className="p-4 space-y-2">
-            <NavBtn active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} icon={<TrendingUp size={20} />} label={t('nav.overview')} />
-            <NavBtn active={activeTab === 'education'} onClick={() => setActiveTab('education')} icon={<GraduationCap size={20} />} label={t('nav.education')} />
-            <NavBtn active={activeTab === 'jobs'} onClick={() => setActiveTab('jobs')} icon={<Briefcase size={20} />} label={t('nav.jobs')} />
-            <NavBtn active={activeTab === 'market'} onClick={() => setActiveTab('market')} icon={<DollarSign size={20} />} label={t('nav.market')} />
-            <NavBtn active={activeTab === 'bank'} onClick={() => setActiveTab('bank')} icon={<Landmark size={20} />} label={t('nav.bank')} />
-          </nav>
+          <div>
+              <h1 className="text-lg font-bold leading-none tracking-tight">Tycoon</h1>
+              <div className="text-xs text-gray-500 mt-1 font-mono">{MAX_YEARS} Years</div>
+          </div>
         </div>
-        <div className="p-4 border-t border-gray-800">
-          <button 
-            onClick={() => setShowSettings(true)}
-            className="w-full flex items-center justify-center lg:justify-start p-2 rounded hover:bg-gray-800 text-gray-400 hover:text-white transition-colors mb-4"
-          >
-             <Settings size={20} />
-             <span className="ml-3 font-medium hidden lg:block">{t('settings.title')}</span>
+        
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          <button onClick={() => setActiveTab('overview')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'overview' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
+            <TrendingUp size={20} /> <span className="font-medium">{t('nav.overview')}</span>
           </button>
+          <button onClick={() => setActiveTab('education')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'education' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
+            <GraduationCap size={20} /> <span className="font-medium">{t('nav.education')}</span>
+          </button>
+          <button onClick={() => setActiveTab('jobs')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'jobs' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
+            <Briefcase size={20} /> <span className="font-medium">{t('nav.jobs')}</span>
+          </button>
+          <button onClick={() => setActiveTab('market')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'market' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
+            <LineChart size={20} /> <span className="font-medium">{t('nav.market')}</span>
+          </button>
+          <button onClick={() => setActiveTab('bank')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'bank' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
+            <Landmark size={20} /> <span className="font-medium">{t('nav.bank')}</span>
+          </button>
+        </nav>
 
-          <div className="hidden lg:block space-y-2 text-sm text-gray-400">
-            <div className="flex justify-between">
-              <span>{t('nav.time')}</span>
-              <span className="text-white">{t('nav.year')}{getYearNum(state.gameMonth)} / {t('nav.month')}{getMonthNum(state.gameMonth)}</span>
-            </div>
-             <div className="w-full bg-gray-800 rounded-full h-1 mt-2">
-              <div className="bg-emerald-500 h-1 rounded-full transition-all duration-500" style={{ width: `${(state.gameMonth / MAX_MONTHS) * 100}%` }}></div>
-            </div>
-          </div>
+        <div className="p-4 border-t border-gray-800 space-y-3">
+             <div className="flex items-center justify-between px-2 text-sm text-gray-400">
+                 <div className="flex items-center gap-2"><Hourglass size={16}/> {t('nav.time')}</div>
+                 <div className="font-mono text-white">
+                    {t('nav.year')}{getYearNum(state.gameMonth)} {t('nav.month')}{getMonthNum(state.gameMonth)}
+                 </div>
+             </div>
+             <div className="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                <div className="bg-emerald-500 h-full transition-all duration-300" style={{ width: `${(state.gameMonth / MAX_MONTHS) * 100}%` }}></div>
+             </div>
+             
+             <div className="grid grid-cols-2 gap-2 mt-2">
+                 <Button onClick={nextMonth} disabled={state.isGameOver || isLoading} className="w-full justify-center" variant={state.isGameOver ? 'ghost' : 'primary'}>
+                    {isLoading ? t('header.loading') : state.isGameOver ? t('header.game_over') : <><FastForward size={16}/> {t('header.next_month')}</>}
+                 </Button>
+                 <Button onClick={() => setShowSettings(true)} variant="ghost" className="w-full justify-center">
+                    <Settings size={18} />
+                 </Button>
+             </div>
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-        <header className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 shrink-0">
-           <h1 className="text-xl font-bold text-white capitalize">
-             {activeTab === 'overview' ? t('nav.overview') : activeTab === 'education' ? t('nav.education') : activeTab === 'jobs' ? t('nav.jobs') : activeTab === 'market' ? t('nav.market') : t('nav.bank')}
-           </h1>
-           <div className="flex items-center gap-4">
-             <div className="hidden md:flex items-center gap-6 mr-4">
-                {state.activeCourse && (
-                  <div className="text-right flex items-center gap-2 px-2 py-1 bg-yellow-500/10 rounded border border-yellow-500/20">
-                    <Hourglass size={12} className="text-yellow-500 animate-spin-slow" />
-                    <div className="font-bold text-[10px] text-yellow-400">{currentTitle}</div>
-                  </div>
-                )}
-                <div className="text-right">
-                  <div className="text-[10px] text-gray-400 uppercase">{t('header.cash')}</div>
-                  <div className={`font-mono font-bold text-sm ${state.cash < 0 ? 'text-red-500' : 'text-emerald-400'}`}>{formatMoney(state.cash)}</div>
-                </div>
-             </div>
-             <Button onClick={nextMonth} disabled={state.isGameOver || isLoading} className="w-36 shadow-emerald-500/20 shadow-lg">
-               {isLoading ? t('header.loading') : state.isGameOver ? t('header.game_over') : t('header.next_month')}
-             </Button>
-           </div>
-        </header>
-
-        <div className="flex-1 overflow-y-auto p-6 scroll-smooth" ref={scrollRef}>
-          {state.isGameOver && (
-             <Card className="mb-6 p-6 bg-yellow-500/10 border-yellow-500/50 flex items-center gap-4">
-               <Trophy className="text-yellow-500 w-12 h-12" />
-               <div>
-                 <h2 className="text-2xl font-bold text-white">{t('end.title')}!</h2>
-                 <p className="text-gray-300">{t('end.subtitle')} <span className="text-white font-bold text-xl">{formatMoney(state.netWorth)}</span></p>
-               </div>
-             </Card>
-          )}
-
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto bg-gray-950 p-4 md:p-8 relative">
+        <div className="max-w-7xl mx-auto pb-20 md:pb-0">
           {activeTab === 'overview' && renderOverview()}
           {activeTab === 'education' && renderEducation()}
           {activeTab === 'jobs' && renderJobs()}
           {activeTab === 'market' && renderMarket()}
           {activeTab === 'bank' && renderBank()}
         </div>
-
-        {/* Trade Modal */}
-        {selectedStock && (
-            <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-                <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl w-full max-w-sm shadow-2xl relative animate-in fade-in zoom-in duration-200">
-                    <button onClick={() => setSelectedStock(null)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
-                        <X size={24} />
-                    </button>
-                    
-                    <div className="mb-4">
-                        <div className="text-gray-400 text-xs uppercase font-bold tracking-widest">{t('trade.title')}</div>
-                        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                             {getStockName(selectedStock)}
-                             <span className="text-sm font-normal text-gray-500 font-mono bg-gray-800 px-2 rounded">{selectedStock.symbol}</span>
-                        </h2>
-                        <div className="text-xl font-mono text-emerald-400 mt-1">{formatMoneyDecimal(selectedStock.price)}</div>
-                    </div>
-
-                    <div className="bg-gray-800 p-1 rounded-lg flex mb-4">
-                        <button 
-                            className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${tradeMode === 'buy' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
-                            onClick={() => setTradeMode('buy')}
-                        >
-                            {t('trade.buy')}
-                        </button>
-                        <button 
-                            className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${tradeMode === 'sell' ? 'bg-red-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
-                            onClick={() => setTradeMode('sell')}
-                        >
-                            {t('trade.sell')}
-                        </button>
-                    </div>
-
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-xs text-gray-400 font-bold mb-1">{t('trade.amount')}</label>
-                            <div className="relative">
-                                <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                                <input 
-                                    type="number" 
-                                    value={tradeAmount}
-                                    onChange={(e) => setTradeAmount(e.target.value)}
-                                    placeholder="0"
-                                    className="w-full bg-gray-950 border border-gray-800 rounded-lg py-3 pl-9 pr-16 text-white font-mono focus:outline-none focus:border-indigo-500 transition-colors"
-                                />
-                                <button 
-                                    onClick={handleMaxTrade}
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded transition-colors"
-                                >
-                                    {t('trade.max')}
-                                </button>
-                            </div>
-                            <div className="flex justify-between mt-2 text-xs">
-                                <span className="text-gray-500">{t('trade.est_qty')}:</span>
-                                <span className="font-mono text-white">
-                                    {tradeAmount && !isNaN(parseFloat(tradeAmount)) 
-                                        ? (parseFloat(tradeAmount) / selectedStock.price).toFixed(4) 
-                                        : '0.0000'
-                                    }
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3 pt-2">
-                            <Button variant="ghost" onClick={() => setSelectedStock(null)}>
-                                {t('trade.cancel')}
-                            </Button>
-                            <Button 
-                                variant={tradeMode === 'buy' ? 'primary' : 'danger'} 
-                                onClick={handleExecuteTrade}
-                                disabled={!tradeAmount || parseFloat(tradeAmount) <= 0}
-                            >
-                                {t('trade.confirm')}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        )}
-
-        {/* Settings Modal */}
-        {showSettings && (
-            <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-                <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl w-full max-w-md shadow-2xl relative max-h-[90vh] overflow-y-auto">
-                    <button onClick={() => setShowSettings(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
-                        <X size={24} />
-                    </button>
-                    <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-                        <Settings size={24} />
-                        {t('settings.title')}
-                    </h2>
-                    
-                    <div className="space-y-6">
-                        <div className="flex items-center justify-between p-4 bg-gray-800 rounded-xl">
-                            <div className="flex items-center gap-3">
-                                <Globe className="text-gray-400" />
-                                <span className="font-bold">{t('settings.lang')}</span>
-                            </div>
-                            <div className="flex bg-gray-900 rounded-lg p-1">
-                                <button 
-                                    onClick={() => setLanguage('ru')}
-                                    className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${language === 'ru' ? 'bg-emerald-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                                >
-                                    RU
-                                </button>
-                                <button 
-                                    onClick={() => setLanguage('en')}
-                                    className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${language === 'en' ? 'bg-emerald-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                                >
-                                    EN
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="p-4 bg-gray-800 rounded-xl opacity-50 pointer-events-none grayscale">
-                             <div className="text-center text-sm font-mono text-gray-500">v1.2.0 (Gemini Powered)</div>
-                        </div>
-
-                        {/* ADMIN PANEL */}
-                        <div className="border-t border-gray-800 pt-6">
-                             <div className="flex items-center gap-2 mb-4">
-                                <ShieldAlert size={16} className={isAdmin ? 'text-red-500' : 'text-gray-600'} />
-                                <h3 className="text-sm uppercase font-bold tracking-widest text-gray-500">{t('admin.title')}</h3>
-                             </div>
-
-                             {!isAdmin ? (
-                                <div className="flex gap-2">
-                                    <input 
-                                        type="password" 
-                                        value={adminPin}
-                                        onChange={(e) => setAdminPin(e.target.value)}
-                                        placeholder={t('admin.enter_pin')}
-                                        className="bg-gray-800 border border-gray-700 text-white px-4 py-2 rounded-lg w-full focus:outline-none focus:border-emerald-500"
-                                    />
-                                    <Button variant="secondary" onClick={unlockAdmin}>{t('admin.unlock')}</Button>
-                                </div>
-                             ) : (
-                                <div className="space-y-4 bg-red-900/10 border border-red-900/30 p-4 rounded-xl">
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <Button size="sm" variant="danger" onClick={() => adminAddCash(50000)}>+ $50k</Button>
-                                        <Button size="sm" variant="danger" onClick={() => adminAddCash(1000000)}>+ $1M</Button>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs text-red-400 font-bold mb-1 block">{t('admin.set_score')}: {state.creditScore}</label>
-                                        <input 
-                                            type="range" 
-                                            min="300" 
-                                            max="850" 
-                                            value={state.creditScore} 
-                                            onChange={adminSetScore}
-                                            className="w-full accent-red-500"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs text-red-400 font-bold mb-1 block">{t('admin.set_edu')}</label>
-                                        <select 
-                                            className="w-full bg-gray-900 border border-red-900/50 text-xs p-2 rounded text-white"
-                                            onChange={adminSetEdu}
-                                            value={state.education}
-                                        >
-                                            {Object.keys(EDUCATION_TITLES[language]).map(key => (
-                                                <option key={key} value={key}>{EDUCATION_TITLES[language][key as EducationLevel]}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs text-red-400 font-bold mb-1 block">{t('admin.set_job')}</label>
-                                        <select 
-                                            className="w-full bg-gray-900 border border-red-900/50 text-xs p-2 rounded text-white"
-                                            onChange={adminSetJob}
-                                            value={state.currentJob?.id || ''}
-                                        >
-                                            <option value="">{t('jobs.unemployed')}</option>
-                                            {JOBS.map(job => (
-                                                <option key={job.id} value={job.id}>{getJobTitle(job)}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-                             )}
-                        </div>
-
-                        <Button className="w-full" onClick={() => setShowSettings(false)}>
-                             OK
-                        </Button>
-                    </div>
-                </div>
-            </div>
-        )}
       </main>
+
+      {/* Trade Modal */}
+      {selectedStock && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+            <div className="bg-gray-900 rounded-2xl w-full max-w-md border border-gray-700 shadow-2xl overflow-hidden transform transition-all">
+                <div className="p-6 border-b border-gray-800 flex justify-between items-center">
+                    <div>
+                        <h3 className="text-xl font-bold">{t('trade.title')}: {getStockName(selectedStock)}</h3>
+                        <div className="text-emerald-400 font-mono mt-1">{formatMoneyDecimal(selectedStock.price)}</div>
+                    </div>
+                    <button onClick={() => setSelectedStock(null)} className="text-gray-500 hover:text-white"><X size={24}/></button>
+                </div>
+                
+                <div className="p-6 space-y-6">
+                    <div className="flex bg-gray-800 p-1 rounded-lg">
+                        <button onClick={() => setTradeMode('buy')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${tradeMode === 'buy' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>{t('trade.buy')}</button>
+                        <button onClick={() => setTradeMode('sell')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${tradeMode === 'sell' ? 'bg-red-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>{t('trade.sell')}</button>
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-xs text-gray-400 uppercase font-bold">{t('trade.amount')}</label>
+                        <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                            <input 
+                                type="number" 
+                                value={tradeAmount} 
+                                onChange={(e) => setTradeAmount(e.target.value)}
+                                className="w-full bg-gray-800 border border-gray-700 rounded-lg py-3 pl-8 pr-16 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                placeholder="0.00"
+                            />
+                            <button onClick={handleMaxTrade} className="absolute right-2 top-1/2 -translate-y-1/2 text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-blue-300 font-bold uppercase">{t('trade.max')}</button>
+                        </div>
+                    </div>
+
+                    <div className="flex justify-between text-sm p-3 bg-gray-800/50 rounded border border-gray-700/50">
+                        <span className="text-gray-400">{t('trade.est_qty')}</span>
+                        <span className="font-mono text-white">
+                            {((parseFloat(tradeAmount) || 0) / selectedStock.price).toFixed(4)}
+                        </span>
+                    </div>
+
+                    <div className="flex justify-between text-xs text-gray-500">
+                        <span>{t('header.cash')}: {formatMoney(state.cash)}</span>
+                        <span>{t('edu.owned')}: {selectedStock.owned.toFixed(4)}</span>
+                    </div>
+                </div>
+
+                <div className="p-6 border-t border-gray-800 flex gap-3">
+                    <Button onClick={() => setSelectedStock(null)} variant="ghost" className="flex-1">{t('trade.cancel')}</Button>
+                    <Button onClick={handleExecuteTrade} variant={tradeMode === 'buy' ? 'primary' : 'danger'} className="flex-1" disabled={!parseFloat(tradeAmount) || parseFloat(tradeAmount) <= 0}>
+                        {tradeMode === 'buy' ? t('trade.buy') : t('trade.sell')}
+                    </Button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+             <div className="bg-gray-900 rounded-xl w-full max-w-sm border border-gray-700 shadow-2xl">
+                 <div className="p-4 border-b border-gray-800 flex justify-between items-center">
+                     <h3 className="font-bold flex items-center gap-2"><Settings size={18}/> {t('settings.title')}</h3>
+                     <button onClick={() => setShowSettings(false)}><X size={20}/></button>
+                 </div>
+                 <div className="p-4 space-y-4">
+                     <div>
+                         <label className="block text-xs text-gray-400 uppercase font-bold mb-2">{t('settings.lang')}</label>
+                         <div className="flex gap-2">
+                             <button onClick={() => setLanguage('ru')} className={`flex-1 py-2 rounded border transition-colors ${language === 'ru' ? 'bg-blue-600 border-blue-500 text-white' : 'border-gray-700 text-gray-400 hover:bg-gray-800'}`}>Русский</button>
+                             <button onClick={() => setLanguage('en')} className={`flex-1 py-2 rounded border transition-colors ${language === 'en' ? 'bg-blue-600 border-blue-500 text-white' : 'border-gray-700 text-gray-400 hover:bg-gray-800'}`}>English</button>
+                         </div>
+                     </div>
+                     
+                     <hr className="border-gray-800" />
+                     
+                     <div>
+                         <label className="block text-xs text-gray-400 uppercase font-bold mb-2">{t('admin.title')}</label>
+                         {!isAdmin ? (
+                             <div className="flex gap-2">
+                                 <input 
+                                    type="password" 
+                                    placeholder={t('admin.enter_pin')}
+                                    className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1 text-sm outline-none focus:border-blue-500"
+                                    value={adminPin}
+                                    onChange={(e) => setAdminPin(e.target.value)}
+                                 />
+                                 <Button size="sm" onClick={unlockAdmin}>{t('admin.unlock')}</Button>
+                             </div>
+                         ) : (
+                             <div className="space-y-3 p-3 bg-red-900/10 border border-red-500/20 rounded">
+                                 <div className="text-xs text-red-400 font-bold flex items-center gap-1"><ShieldAlert size={12}/> {t('admin.access_granted')}</div>
+                                 <div className="grid grid-cols-2 gap-2">
+                                     <Button size="sm" variant="danger" onClick={() => adminAddCash(10000)}>+10k $</Button>
+                                     <Button size="sm" variant="danger" onClick={() => adminAddCash(1000000)}>+1m $</Button>
+                                 </div>
+                                 <div>
+                                     <label className="text-[10px] text-gray-400 block mb-1">{t('admin.set_score')}</label>
+                                     <input type="range" min="300" max="850" value={state.creditScore} onChange={adminSetScore} className="w-full accent-red-500" />
+                                 </div>
+                                 <select className="w-full bg-gray-800 text-xs p-1 rounded" onChange={adminSetEdu} value={state.education}>
+                                     {Object.values(EducationLevel).map(l => <option key={l} value={l}>{l}</option>)}
+                                 </select>
+                                  <select className="w-full bg-gray-800 text-xs p-1 rounded" onChange={adminSetJob} value={state.currentJob?.id || ''}>
+                                     <option value="">No Job</option>
+                                     {JOBS.map(j => <option key={j.id} value={j.id}>{j.title}</option>)}
+                                 </select>
+                             </div>
+                         )}
+                     </div>
+                 </div>
+             </div>
+          </div>
+      )}
+
+      {/* Game Over Overlay */}
+      {state.isGameOver && (
+          <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 animate-in fade-in duration-1000">
+              <div className="text-center space-y-6 max-w-lg">
+                  <Trophy size={80} className="mx-auto text-yellow-500 animate-bounce" />
+                  <h1 className="text-5xl font-bold text-white tracking-tight">{t('end.title')}</h1>
+                  <div>
+                      <div className="text-gray-400 text-lg">{t('end.subtitle')}</div>
+                      <div className="text-6xl font-mono font-bold text-emerald-400 mt-2">{formatMoney(state.netWorth)}</div>
+                  </div>
+                  <Button size="lg" onClick={() => window.location.reload()} className="w-full max-w-xs mx-auto animate-pulse">
+                      {t('settings.reset')}
+                  </Button>
+              </div>
+          </div>
+      )}
     </div>
   );
 }
-
-const NavBtn = ({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) => (
-  <button onClick={onClick} className={`w-full flex items-center p-3 rounded-lg transition-colors ${active ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/50' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
-    <div className="flex justify-center lg:w-auto w-full">{icon}</div>
-    <span className="ml-3 font-medium hidden lg:block">{label}</span>
-  </button>
-);
